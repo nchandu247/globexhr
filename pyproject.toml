@@ -1,0 +1,15 @@
+[project]
+name = "greythr_bridge"
+authors = [{ name = "Globex Digital Solutions Pvt Ltd", email = "hr@globexdigital.ai" }]
+description = "Bridge between Frappe HR and greytHR Cloud"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = ["ratelimit"]
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "greythr_bridge"
