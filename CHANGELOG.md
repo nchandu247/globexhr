@@ -60,3 +60,22 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 - ✅ **Task 0.8:** HR team invited with HR Manager role. Personal admin user created.
 
 ## Phase 0 — COMPLETE
+
+---
+
+## [Unreleased] — Phase 1
+
+### Phase 1 — Settings + API Client
+
+- ✅ **Tasks 1.3–1.5, 1.7:** Core API client implemented and tested.
+  - `api/exceptions.py` — GreytHRError, GreytHRAuthError, GreytHRRateLimitError,
+    GreytHRServerError, GreytHRClientError, ZohoSignError
+  - `utils/retry.py` — @retry decorator with exponential backoff (1s/2s/4s, 3 attempts)
+  - `utils/rate_limiter.py` — @rate_limited decorator (10 req/sec via ratelimit library)
+  - `utils/logging.py` — PII-safe frappe.log_error wrapper
+  - `utils/idempotency.py` — make_key() helper
+  - `api/client.py` — GreytHRClient with correct greytHR auth (Basic OAuth on tenant host,
+    ACCESS-TOKEN header, x-greythr-domain header, Content-Type HTML trap, one-shot retry)
+  - `tests/conftest.py` — frappe + ratelimit mocks, shared fixtures
+  - `tests/test_client.py` — 11 tests, all passing offline
+- ⬜ **Tasks 1.1, 1.2:** greytHR Settings + greytHR Sync Log DocTypes. Next.
