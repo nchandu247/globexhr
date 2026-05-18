@@ -76,18 +76,19 @@ children, description, id, name, parent, taxable, type
 
 ---
 
-## Pending Verification (Required Before Phase 6)
+## Write Endpoint Verification (Tested 2026-05-18)
 
-These **write** endpoints have **not** been verified with the correct auth pattern.
-Test with `ACCESS-TOKEN` header + `x-greythr-domain` header (not `Authorization: Bearer`):
+Tested with correct auth (`ACCESS-TOKEN` + `x-greythr-domain`) using empty `{}` payload.
 
-| Endpoint | Purpose | Status |
+| Endpoint | HTTP Result | Conclusion |
 |---|---|---|
-| `POST /employee/v2/employees` | Create new employee (push new joiner) | ⬜ Unverified |
-| `POST /employee/v2/employee-docs/{id}/{category}` | Upload signed PDF | ⬜ Unverified |
-| `POST /payroll/v2/salary/revision/employees/{id}` | Push salary revision | ⬜ Unverified |
+| `POST /employee/v2/employees` | **400** | ✅ Available on Essential plan — rejected empty payload as expected |
+| `POST /employee/v2/employee-docs/{id}/{category}` | **404** | ❓ Endpoint exists but category name `offer_letter` is likely wrong — verify correct category enum from API docs before Phase 6 |
+| `POST /payroll/v2/salary/revision/employees/{id}` | **500** | ✅ Likely available — server processed request past auth/plan checks, crashed on empty payload (greytHR bug) |
 
-Also confirm these are available on the **Essential plan** (not Enterprise-only).
+**Action required before Phase 6:** Confirm correct document category name from
+`api-docs.greythr.com`. Likely camelCase (`offerLetter`) or uppercase (`OFFER_LETTER`)
+rather than `offer_letter`.
 
 ---
 

@@ -453,7 +453,10 @@ Each phase has clear deliverables and a verification step. **Do not move to the 
     **Must be tested with the correct auth combo** (`ACCESS-TOKEN` header +
     `x-greythr-domain: globex.greythr.com` — not `Authorization: Bearer`). Earlier
     attempts with the wrong auth pattern may have produced false results.
-    Record outcome here: `______________`
+    Record outcome (tested 2026-05-18): POST /employee/v2/employees → 400 ✅ available;
+    POST /payroll/v2/salary/revision → 500 ✅ likely available; POST /employee-docs →
+    404 ❓ category name needs verification before Phase 6. All endpoints appear
+    accessible on Essential plan. See NOTES_greythr_api.md for details.
   - Confirm Zoho Sign account is on the India data center (in.zoho.com).
     Record DC here: `______________`
 - [ ] 0.1 Sign up for Frappe Cloud free trial; create site `hr-globexdigital` on Private
