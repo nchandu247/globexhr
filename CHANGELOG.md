@@ -41,5 +41,16 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 - ✅ **Task 0.9:** GitHub repo created at `https://github.com/nchandu247/globexhr`.
   Scaffold committed: pyproject.toml, hooks.py, modules.txt, all package stubs,
   .gitignore, .github/workflows/ci.yml, README.md.
+- ✅ **Task 0.10 (partial):** Frappe Cloud V16 bench "GlobexHR" deployed successfully.
+  Workaround applied: official `frappe/erpnext` (version-16) must be present in the bench
+  alongside `frappe/hrms` due to a Frappe Cloud account-level resolver bug that
+  auto-adds a broken ERPNext fork (`vorasmit/erpnext`) otherwise.
+  ERPNext will NOT be installed on the site — bench only.
+  Raise support ticket with Frappe Cloud to clean up the broken fork registrations.
+- ✅ **Task 0.10 (complete):** Bench GlobexHR deployed successfully with all 6 apps:
+  frappe v16.18.2, Builder v1.24.6, Insights v3.9.9, ERPNext (frappe/erpnext) 799d6d1,
+  HR & Payroll v16.7.0, greytHR Bridge cc0155a. Site created on AWS Mumbai, ₹820/mo plan.
+- ⬜ **Task 0.3:** Frappe HR setup wizard (company, country, currency, fiscal year). Next.
+- ⬜ **Task 0.4:** Timezone Asia/Kolkata, date format dd-mm-yyyy. After 0.3.
+- ⬜ **Task 0.7:** Point hr.globexdigital.ai to new site. Pending.
 - ⬜ **Task 0.8:** HR team invites. Pending.
-- ⬜ **Task 0.10:** Add repo to Frappe Cloud bench and install app. Pending.
