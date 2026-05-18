@@ -50,6 +50,10 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 - ✅ **Task 0.10 (complete):** Bench GlobexHR deployed successfully with all 6 apps:
   frappe v16.18.2, Builder v1.24.6, Insights v3.9.9, ERPNext (frappe/erpnext) 799d6d1,
   HR & Payroll v16.7.0, greytHR Bridge cc0155a. Site created on AWS Mumbai, ₹820/mo plan.
+- ✅ **Fix:** Renamed module from `greytHR Bridge` to `greytHR` and created
+  `greythr_bridge/greythr/` module directory. Frappe was trying to import
+  `greythr_bridge.greythr_bridge` (name collision with app package). Commit `de4ffbb`.
+- ✅ **Site created** on GlobexHR private bench (AWS Mumbai). greythr_bridge installs clean.
 - ⬜ **Task 0.3:** Frappe HR setup wizard (company, country, currency, fiscal year). Next.
 - ⬜ **Task 0.4:** Timezone Asia/Kolkata, date format dd-mm-yyyy. After 0.3.
 - ⬜ **Task 0.7:** Point hr.globexdigital.ai to new site. Pending.
