@@ -54,7 +54,9 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   `greythr_bridge/greythr/` module directory. Frappe was trying to import
   `greythr_bridge.greythr_bridge` (name collision with app package). Commit `de4ffbb`.
 - ✅ **Site created** on GlobexHR private bench (AWS Mumbai). greythr_bridge installs clean.
-- ⬜ **Task 0.3:** Frappe HR setup wizard (company, country, currency, fiscal year). Next.
-- ⬜ **Task 0.4:** Timezone Asia/Kolkata, date format dd-mm-yyyy. After 0.3.
-- ⬜ **Task 0.7:** Point hr.globexdigital.ai to new site. Pending.
-- ⬜ **Task 0.8:** HR team invites. Pending.
+- ✅ **Task 0.3:** Setup wizard completed — Globex Digital Solutions Pvt Ltd, India, INR, FY April 2025.
+- ✅ **Task 0.4:** Timezone set to Asia/Kolkata, date format dd-mm-yyyy.
+- ✅ **Task 0.7:** hr.globexdigital.ai CNAME configured in Cloudflare (DNS only, grey cloud).
+- ✅ **Task 0.8:** HR team invited with HR Manager role. Personal admin user created.
+
+## Phase 0 — COMPLETE
