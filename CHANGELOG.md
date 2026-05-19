@@ -107,3 +107,11 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   Custom fields added to Job Offer (custom_zoho_sign_request_id, custom_zoho_sign_nda_request_id,
   custom_zoho_sign_signed_at, custom_signed_pdf_pushed) and Salary Structure Assignment
   (custom_pushed_to_greythr). All UI tasks across phases batched and complete.
+- ✅ **Task 2.6:** Scheduler wired — pull_employees.run fires every 15 min. Confirmed live.
+- ✅ **Phase 2 live verified:** 340 employees pulled, 0 failed, Status: Success.
+  Three bugs fixed during live testing:
+  1. Frappe Datetime field passed as object to requests URL params → convert to string
+  2. Frappe v16 iterates over datetime during Datetime field validation → store as string
+  3. greytHR Settings version conflict (GreytHRClient saves settings mid-run) → db.set_value
+
+## Phase 2 — COMPLETE
