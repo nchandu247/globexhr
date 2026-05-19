@@ -1,152 +1,419 @@
 <!-- ============================================================
      OFFER LETTER — bound to Job Offer DocType
-     Copy this entire block into Frappe HR → Print Format → HTML
+     Paste into Frappe HR → Print Format → Offer Letter → HTML
      ============================================================ -->
 <style>
-  body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; margin: 0; }
-  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-  .letterhead h2 { margin: 0; font-size: 16pt; }
-  .letterhead p  { margin: 2px 0; font-size: 9pt; }
-  .body-text { line-height: 1.6; }
-  .section-title { font-weight: bold; text-decoration: underline; margin-top: 14px; }
-  table.salary { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
-  table.salary th, table.salary td { border: 1px solid #999; padding: 5px 8px; }
-  table.salary th { background: #f0f0f0; font-weight: bold; }
-  table.salary td.right { text-align: right; }
-  .signature-block { margin-top: 40px; display: flex; justify-content: space-between; }
-  .signature-box { width: 45%; }
-  .acceptance { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 12px; font-size: 10pt; }
-  .ref-date { display: flex; justify-content: space-between; margin-bottom: 16px; }
+  /* ── Page layout: enlarged margins to fit header + footer ── */
+  @page {
+    margin-top: 130px !important;
+    margin-bottom: 75px  !important;
+    margin-left:  15mm;
+    margin-right: 15mm;
+  }
+
+  /* ── Repeating page header ─────────────────────────────── */
+  #lh-header {
+    position: fixed;
+    top: -120px;
+    left: 0; right: 0;
+    height: 115px;
+    padding: 0 0 6px 0;
+    border-bottom: 2px solid #00205b;
+  }
+  #lh-header table { width: 100%; border-collapse: collapse; }
+  #lh-header td { vertical-align: middle; padding: 0; }
+  #lh-header img { height: 72px; }
+  #lh-header .addr {
+    text-align: right;
+    font-size: 8.5pt;
+    color: #444;
+    line-height: 1.5;
+  }
+
+  /* ── Repeating page footer ─────────────────────────────── */
+  #lh-footer {
+    position: fixed;
+    bottom: -62px;
+    left: 0; right: 0;
+    height: 58px;
+    background: #00205b;
+    color: #fff;
+    text-align: center;
+    padding: 7px 10px 0;
+    font-size: 8.5pt;
+    line-height: 1.5;
+  }
+  #lh-footer strong { font-size: 9.5pt; }
+
+  /* ── Body typography ───────────────────────────────────── */
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 11pt;
+    color: #000;
+    line-height: 1.6;
+    margin: 0;
+  }
+  p { margin: 0 0 10px 0; }
+  .ref-date  { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 10.5pt; }
+  .section-title { font-weight: bold; margin-top: 14px; margin-bottom: 4px; }
+  ul { margin: 6px 0 10px 20px; padding: 0; }
+  ul li { margin-bottom: 4px; }
+  ol.roman { list-style-type: upper-roman; margin: 6px 0 10px 24px; }
+  ol.roman li { margin-bottom: 3px; }
+
+  /* ── Signature blocks ──────────────────────────────────── */
+  .sig-row { display: flex; justify-content: space-between; margin-top: 36px; }
+  .sig-box { width: 45%; }
+  .sig-line { border-top: 1px solid #000; margin-top: 40px; padding-top: 4px; font-size: 10pt; }
+
+  /* ── Annexure A ────────────────────────────────────────── */
+  .annexure-title { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 4px; }
+  .annexure-sub   { text-align: center; font-size: 10pt; margin-bottom: 14px; }
+  table.sal { width: 100%; border-collapse: collapse; font-size: 10pt; margin-top: 10px; }
+  table.sal th, table.sal td { border: 1px solid #999; padding: 5px 8px; }
+  table.sal th { background: #00205b; color: #fff; font-weight: bold; }
+  table.sal .meta td { background: #f5f5f5; border: 1px solid #aaa; }
+  table.sal .sub-head td { background: #dce6f1; font-weight: bold; }
+  table.sal .total-row td { font-weight: bold; background: #f0f0f0; }
+  table.sal .ctc-row td  { font-weight: bold; background: #e8f4e8; }
+  table.sal td.r { text-align: right; }
+  .note-box { font-size: 8.5pt; color: #444; border: 1px solid #ccc; padding: 8px; margin-top: 10px; }
+
+  /* ── Acceptance block ──────────────────────────────────── */
+  .acceptance { margin-top: 28px; border-top: 1px solid #ccc; padding-top: 12px; font-size: 10pt; }
 </style>
 
-<div class="letterhead">
-  <h2>Globex Digital Solutions Pvt Ltd</h2>
-  <p>Hyderabad, India &nbsp;|&nbsp; hr@globexdigital.ai</p>
+<!-- ══════════════════ REPEATING HEADER ══════════════════ -->
+<div id="lh-header">
+  <table>
+    <tr>
+      <td style="width:220px;">
+        <img src="https://globexdigital.ai/assets/4_1749457716209-CAph7fSH.png" alt="Globex Digital">
+      </td>
+      <td class="addr">
+        3rd Floor, Plot No: 2A, 8-3-191/17, Vengal Rao Nagar<br>
+        Hyderabad – 500 038<br>
+        Tel: 040-3551 1959 &nbsp;|&nbsp; hr@globexdigital.ai &nbsp;|&nbsp; www.globexdigital.ai
+      </td>
+    </tr>
+  </table>
 </div>
 
+<!-- ══════════════════ REPEATING FOOTER ══════════════════ -->
+<div id="lh-footer">
+  <strong>Globex Digital Solutions Pvt. Ltd.</strong><br>
+  3rd Floor, Plot No: 2A, 8-3-191/17, Vengal Rao Nagar | Hyderabad – 500 038 |
+  Tel: 040-3551 1959 | hr@globexdigital.ai | www.globexdigital.ai
+</div>
+
+<!-- ══════════════════════ LETTER BODY ══════════════════════ -->
+
+<p style="text-align:center; font-size:13pt; font-weight:bold; margin-bottom:18px;">
+  Offer Letter
+</p>
+
 <div class="ref-date">
-  <span><strong>Ref:</strong> {{ doc.name }}</span>
-  <span><strong>Date:</strong> {{ frappe.utils.formatdate(doc.offer_date or frappe.utils.today(), "dd MMMM yyyy") }}</span>
+  <span><strong>Ref No.:</strong> {{ doc.name }}</span>
+  <span>{{ frappe.utils.formatdate(doc.offer_date or frappe.utils.today(), "dd MMMM yyyy") }}</span>
 </div>
 
 {% set applicant_first = doc.applicant_name.split()[0] if doc.applicant_name else "" %}
 
 <p>
-  Dear {{ applicant_first }},
+  {{ doc.custom_salutation or "Mr." }}.{{ doc.applicant_name }},<br>
+  Hyderabad.
 </p>
 
-<div class="body-text">
-  <p>
-    We are pleased to offer you the position of <strong>{{ doc.designation }}</strong> at
-    Globex Digital Solutions Pvt Ltd, subject to the terms and conditions set out in this letter.
-  </p>
+<p>Dear {{ applicant_first }},</p>
 
-  <p class="section-title">1. Posting Location</p>
-  <p>
-    Your posting location will be <strong>Hyderabad</strong>. Transfers may be made at
-    the Company's discretion.
-  </p>
+<p>
+  We are delighted to extend our warmest congratulations on your successful application and subsequent
+  selection for the position of <strong>{{ doc.designation }}</strong> at Globex Digital Solutions Pvt Ltd
+  (hereinafter referred to as "GDS"). We believe that your expertise and skills will greatly contribute to
+  our fast-paced and dedicated team, as we strive to provide our clients with the highest level of service
+  and advice.
+</p>
 
-  <p class="section-title">2. Date of Joining</p>
-  <p>
-    Your date of joining is <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>.
-  </p>
+<p>
+  Your initial place of posting will be in <strong>Hyderabad</strong>, where exciting opportunities await you.
+  We are eager for you to join us as early as possible, ideally by
+  <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>.
+  Promptly joining GDS will ensure a smooth transition into your new role and allow you to hit the ground running.
+</p>
 
-  <p class="section-title">3. Compensation</p>
-  <p>
-    Your gross annual CTC will be <strong>₹ {{ doc.custom_ctc or "[Annual CTC]" }}</strong> as detailed
-    in Annexure A. Salary components are subject to statutory deductions.
-  </p>
+<p>
+  As a valued member of the GDS team, we want you to know that your dedication and contributions are highly
+  appreciated. We firmly believe in delivering outstanding quality and results that not only meet but exceed
+  our clients' expectations. Your commitment to excellence is crucial in upholding our reputation as a trusted
+  partner in delivering exceptional solutions.
+</p>
 
-  <p class="section-title">4. Introductory Period</p>
-  <p>
-    You will be on an introductory period of <strong>180 days</strong> from your date of joining,
-    during which either party may terminate employment by providing notice as per the separation clause below.
-  </p>
+<p>
+  In return for your commitment, we are fully committed to providing you with every opportunity to learn, grow,
+  and reach your highest potential. We offer a supportive environment that encourages continuous professional
+  development through training programmes, mentorship opportunities, and access to cutting-edge resources.
+</p>
 
-  <p class="section-title">5. Income Tax</p>
-  <p>
-    Tax deducted at source (TDS) will be computed based on your total annual income as per applicable
-    provisions of the Income Tax Act, 1961. You are advised to submit investment declarations and proofs
-    to HR in a timely manner.
-  </p>
+<p>
+  This offer is time-sensitive. It is valid for seven days from the date of issue or until the date of joining,
+  whichever comes earlier. If we do not receive your acceptance within the specified time frame, this offer will
+  be considered null and void.
+</p>
 
-  <p class="section-title">6. Conflict of Interest &amp; Background Verification</p>
-  <p>
-    This offer is conditional upon successful completion of background verification. You are required to
-    disclose any existing obligations, agreements, or potential conflicts of interest before your date of joining.
-  </p>
+<p class="section-title">Salary</p>
+<p>
+  We are pleased to inform you that your salary will be
+  <strong>₹ {{ doc.custom_ctc or "[Annual CTC]" }}</strong> per annum. You will receive your salary through
+  our standard payroll schedule, with your first paycheck scheduled for the 7th of the following month.
+  Please note that this salary is subject to adjustment in accordance with our employee compensation policies,
+  as detailed in Annexure A.
+</p>
 
-  <p class="section-title">7. Separation</p>
-  <p>
-    Post-confirmation, either party may terminate employment by providing <strong>30 days' written notice</strong>
-    or payment in lieu thereof. The Company reserves the right to terminate employment without notice in cases
-    of misconduct, fraud, or breach of confidentiality obligations.
-  </p>
+<p class="section-title">Introductory Period</p>
+<p>
+  There will be an initial <strong>180-day introductory period</strong>. During this period, employees are
+  considered essential employees. After completing the introductory period, the individual will become a
+  regular full-time employee. Employees are eligible to use Paid Time Off (PTO) from their 180th day of
+  employment.
+</p>
 
-  <p class="section-title">8. Benefits</p>
-  <ul>
-    <li>Group Medical Coverage (GMC): ₹3,00,000 per annum</li>
-    <li>Personal Accident Cover: ₹10,00,000 per annum</li>
-    <li>Leave entitlement as per the Company's Leave Policy</li>
-  </ul>
+<p class="section-title">Tax Advice</p>
+<p>
+  You are encouraged to obtain your own tax advice regarding your compensation. You agree that the Company
+  does not have a duty to design its compensation policies in a manner that minimises your tax liabilities,
+  and you will not make any claim against the Company or its Board of Directors related to tax liabilities
+  arising from your compensation.
+</p>
 
-  <p>
-    We look forward to you joining the Globex Digital Solutions team. Please sign and return a copy of
-    this letter as your acceptance.
-  </p>
+<p class="section-title">Conflict of Interest &amp; Background Verification</p>
+<p>
+  As part of your commitment to the Company, we request that during your employment you refrain from engaging
+  in any other employment, consulting, or business activity (whether full-time or part-time) that may create
+  a conflict of interest with GDS.
+</p>
+<p>
+  As part of our standard procedures, we conduct a thorough verification process covering your character,
+  antecedents, previous employment testimonials, educational qualifications, and references. At any point,
+  if information provided by you is found to be incorrect, suppressed, or false, or if you are convicted of
+  criminal activities or found guilty of financial irregularities, your employment may be terminated immediately.
+</p>
+
+<p class="section-title">Separation</p>
+<p>
+  As per GDS separation policy, your resignation will be considered valid only when officially communicated
+  to both your reporting manager and the HR Team. The employee has the right to terminate the employment
+  agreement by providing a written notice of at least <strong>30 days</strong>. We understand that individual
+  circumstances may vary and are open to negotiating a shorter notice period where reasonable.
+</p>
+<p>GDS may or may not provide a 30-day notice period in the event that termination of employment is intended.
+This notice period is applicable in cases including but not limited to:</p>
+<ol class="roman">
+  <li>Reference verification found unacceptable.</li>
+  <li>Employee found engaged in misrepresentation, misconduct, dishonesty, or moral turpitude.</li>
+  <li>Employee's failure to perform duties as reported by the Client reporting manager or based on the client's dissatisfaction or request for removal.</li>
+  <li>Employee convicted of, or having pleaded guilty to, a felony or crime involving embezzlement, conversion of property, or fraud.</li>
+  <li>Employee's failure to abide by GDS or client work rules, code of conduct, or policies.</li>
+  <li>Non-availability to report to work for more than three days without informing the reporting manager or HR.</li>
+</ol>
+
+<p class="section-title">Benefits</p>
+<ul>
+  <li>Group Medical Coverage (GMC): ₹ 3,00,000 per annum (self)</li>
+  <li>Personal Accident Insurance: ₹ 10,00,000 per annum (self)</li>
+</ul>
+
+<p class="section-title">Leave</p>
+<p>
+  Employees will be entitled to one privilege leave per calendar month (12 days per year),
+  which may be carried forward if unutilised.
+</p>
+
+<p class="section-title">Right to Hire</p>
+<p>
+  Depending upon your performance, the client or engagement team has the right to hire you directly as a
+  full-time employee, subject to mutual agreement.
+</p>
+
+<p class="section-title">Project Start Date</p>
+<p>
+  The start date of your employment will be
+  <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>.
+  Any change to the start date will be communicated to you. The offer of employment stands cancelled in case
+  of cessation of the Employer's project with the client for any reason. The location of your work may change
+  depending on client business needs.
+</p>
+
+<p>
+  Together, let's strive for excellence and create a work environment where everyone thrives.
+  If you ever need guidance or support, please do not hesitate to reach out.
+</p>
+
+<p>Yours sincerely,</p>
+
+<div class="sig-row">
+  <div class="sig-box">
+    <div class="sig-line">
+      <strong>For Globex Digital Solutions Pvt Ltd</strong><br>
+      Authorised Signatory
+    </div>
+  </div>
+  <div class="sig-box" style="text-align:right;">
+    <div class="sig-line">
+      Employee Signature
+    </div>
+  </div>
 </div>
 
-<div class="signature-block">
-  <div class="signature-box">
-    <p>___________________________</p>
-    <p><strong>Authorised Signatory</strong></p>
-    <p>Globex Digital Solutions Pvt Ltd</p>
-  </div>
-  <div class="signature-box" style="text-align:right;">
-    <p>___________________________</p>
-    <p><strong>{{ doc.applicant_name }}</strong></p>
-    <p>Signature &amp; Date</p>
-  </div>
-</div>
-
-<!-- ═══════════════════ ANNEXURE A — SALARY BREAKUP ═══════════════════ -->
+<!-- ══════════════ ANNEXURE A — SALARY BREAKUP ══════════════ -->
 <div style="page-break-before: always;">
-  <h3 style="text-align:center;">Annexure A — Compensation Details</h3>
-  <p style="text-align:center;">{{ doc.applicant_name }} | {{ doc.designation }}</p>
 
-  <table class="salary">
+  <p class="annexure-title">Annexure A</p>
+  <p class="annexure-sub">Salary Breakup for {{ doc.applicant_name }}</p>
+
+  {# ── Computed values (monthly arithmetic in Jinja) ── #}
+  {% set basic   = doc.custom_basic or 0 %}
+  {% set hra     = doc.custom_hra or 0 %}
+  {% set conv    = doc.custom_conveyance or 0 %}
+  {% set med     = doc.custom_medical_allowance or 0 %}
+  {% set special = doc.custom_special_allowance or 0 %}
+  {% set gross_m = basic + hra + conv + med + special %}
+  {% set epf     = doc.custom_employee_pf or 0 %}
+  {% set eesi    = doc.custom_employee_esi or 0 %}
+  {% set pt      = doc.custom_professional_tax or 0 %}
+  {% set ded_m   = epf + eesi + pt %}
+  {% set net_m   = gross_m - ded_m %}
+  {% set er_pf   = doc.custom_employer_pf or 0 %}
+  {% set er_ins  = doc.custom_employer_insurance or 0 %}
+  {% set er_ded  = er_pf + er_ins %}
+  {% set ctc_ann = doc.custom_ctc or (gross_m + er_ded) * 12 %}
+
+  <table class="sal">
     <tr>
-      <th>Component</th>
-      <th class="right">Monthly (₹)</th>
-      <th class="right">Annual (₹)</th>
+      <th style="width:50%;">Description</th>
+      <th class="r" style="width:25%;">Monthly (₹)</th>
+      <th class="r" style="width:25%;">Annually (₹)</th>
     </tr>
-    <tr><td>Basic</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>HRA</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Conveyance Allowance</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Medical Allowance</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Special Allowance</td><td class="right"></td><td class="right"></td></tr>
-    <tr style="font-weight:bold;"><td>Total Earnings (Gross)</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td colspan="3" style="background:#f9f9f9;font-weight:bold;padding:4px 8px;">Deductions</td></tr>
-    <tr><td>Employee PF</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Employee ESI</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Professional Tax</td><td class="right"></td><td class="right"></td></tr>
-    <tr style="font-weight:bold;"><td>Net Take-Home</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td colspan="3" style="background:#f9f9f9;font-weight:bold;padding:4px 8px;">Employer Contributions</td></tr>
-    <tr><td>Employer PF</td><td class="right"></td><td class="right"></td></tr>
-    <tr><td>Medical Insurance</td><td class="right"></td><td class="right"></td></tr>
-    <tr style="font-weight:bold; background:#e8f4e8;"><td>Total CTC</td><td class="right"></td><td class="right">{{ doc.custom_ctc or "" }}</td></tr>
+
+    <!-- Meta rows -->
+    <tr class="meta">
+      <td colspan="3"><strong>Band:</strong> {{ doc.custom_band or "" }} &nbsp;&nbsp;
+        <strong>Designation:</strong> {{ doc.designation }} &nbsp;&nbsp;
+        <strong>Effective Date:</strong> {{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "" }}
+      </td>
+    </tr>
+
+    <!-- Earnings -->
+    <tr class="sub-head"><td colspan="3">Earnings</td></tr>
+    <tr><td>Basic</td>
+        <td class="r">{{ "{:,.0f}".format(basic) }}</td>
+        <td class="r">{{ "{:,.0f}".format(basic * 12) }}</td></tr>
+    <tr><td>HRA</td>
+        <td class="r">{{ "{:,.0f}".format(hra) }}</td>
+        <td class="r">{{ "{:,.0f}".format(hra * 12) }}</td></tr>
+    <tr><td>Conveyance Allowance</td>
+        <td class="r">{{ "{:,.0f}".format(conv) }}</td>
+        <td class="r">{{ "{:,.0f}".format(conv * 12) }}</td></tr>
+    <tr><td>Medical Allowance</td>
+        <td class="r">{{ "{:,.0f}".format(med) }}</td>
+        <td class="r">{{ "{:,.0f}".format(med * 12) }}</td></tr>
+    <tr><td>Special Allowance</td>
+        <td class="r">{{ "{:,.0f}".format(special) }}</td>
+        <td class="r">{{ "{:,.0f}".format(special * 12) }}</td></tr>
+    <tr><td>LTA</td><td class="r">0</td><td class="r">0</td></tr>
+    <tr class="total-row">
+        <td>Total Earnings (A)</td>
+        <td class="r">{{ "{:,.0f}".format(gross_m) }}</td>
+        <td class="r">{{ "{:,.0f}".format(gross_m * 12) }}</td></tr>
+
+    <!-- Employee Deductions -->
+    <tr class="sub-head"><td colspan="3">Employee Deductions</td></tr>
+    <tr><td>Provident Fund</td>
+        <td class="r">{{ "{:,.0f}".format(epf) }}</td>
+        <td class="r">{{ "{:,.0f}".format(epf * 12) }}</td></tr>
+    <tr><td>ESI / Medical Benefits</td>
+        <td class="r">{{ "{:,.0f}".format(eesi) }}</td>
+        <td class="r">{{ "{:,.0f}".format(eesi * 12) }}</td></tr>
+    <tr><td>Professional Tax</td>
+        <td class="r">{{ "{:,.0f}".format(pt) }}</td>
+        <td class="r">{{ "{:,.0f}".format(pt * 12) }}</td></tr>
+    <tr class="total-row">
+        <td>Total Deductions (B)</td>
+        <td class="r">{{ "{:,.0f}".format(ded_m) }}</td>
+        <td class="r">{{ "{:,.0f}".format(ded_m * 12) }}</td></tr>
+
+    <!-- Employer Deductions -->
+    <tr class="sub-head"><td colspan="3">Employer Contributions</td></tr>
+    <tr><td>Provident Fund</td>
+        <td class="r">{{ "{:,.0f}".format(er_pf) }}</td>
+        <td class="r">{{ "{:,.0f}".format(er_pf * 12) }}</td></tr>
+    <tr><td>ESI / Medical &amp; Insurance Benefits</td>
+        <td class="r">{{ "{:,.0f}".format(er_ins) }}</td>
+        <td class="r">{{ "{:,.0f}".format(er_ins * 12) }}</td></tr>
+    <tr class="total-row">
+        <td>Total Employer Contributions (C)</td>
+        <td class="r">{{ "{:,.0f}".format(er_ded) }}</td>
+        <td class="r">{{ "{:,.0f}".format(er_ded * 12) }}</td></tr>
+
+    <!-- Net and CTC -->
+    <tr class="total-row">
+        <td>Net Salary (A − B)</td>
+        <td class="r">{{ "{:,.0f}".format(net_m) }}</td>
+        <td class="r">{{ "{:,.0f}".format(net_m * 12) }}</td></tr>
+    <tr class="ctc-row">
+        <td>Annual CTC (A + C)</td>
+        <td class="r"></td>
+        <td class="r">{{ "{:,.0f}".format(ctc_ann) }}</td></tr>
   </table>
-  <p style="font-size:9pt; color:#555; margin-top:8px;">
-    * Salary components are indicative. Actual take-home may vary based on applicable tax declarations and statutory deductions.
-  </p>
+
+  <div class="note-box">
+    <strong>Note:</strong><br>
+    • Personal tax liability arising from your compensation and joining expenses, if applicable, will be solely borne by you as the employee.<br>
+    • The Company policies and statutory guidelines govern all salary components.<br>
+    • This salary sheet is strictly confidential and must not be discussed with anyone other than your Globex Reporting Manager, personal Attorney, and Family Members.
+  </div>
+
+  <div class="sig-row">
+    <div class="sig-box">
+      <div class="sig-line">
+        <strong>Globex Digital Solutions Pvt Ltd</strong><br>
+        Authorised Signatory
+      </div>
+    </div>
+    <div class="sig-box" style="text-align:right;">
+      <div class="sig-line">
+        Employee Signature
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="acceptance">
-  <p><strong>Acceptance</strong></p>
+<!-- ══════════════ ACCEPTANCE PAGE ══════════════ -->
+<div style="page-break-before: always;">
+
+  <p class="section-title">Acceptance</p>
   <p>
-    I, <strong>{{ doc.applicant_name }}</strong>, hereby accept the offer of employment on the
-    terms and conditions stated in this letter.
+    I, <strong>{{ doc.applicant_name }}</strong>, have received the offer of employment with compensation
+    details as stated above. I have read, understood, and accept the employment terms and conditions. I shall
+    join service with effect from
+    <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>.
   </p>
-  <p>Signature: _______________________ &nbsp;&nbsp; Date: _______________________</p>
+
+  <p style="text-align:center; color:#888; margin:30px 0;">* Below space is intentionally left blank *</p>
+
+  <div class="sig-row" style="margin-top:60px;">
+    <div class="sig-box">
+      <div class="sig-line">
+        <strong>Globex Digital Solutions Pvt Ltd</strong><br>
+        Authorised Signatory<br>
+        Date: {{ frappe.utils.formatdate(doc.offer_date or frappe.utils.today(), "dd MMMM yyyy") }}
+      </div>
+    </div>
+    <div class="sig-box" style="text-align:right;">
+      <div class="sig-line">
+        <strong>{{ doc.applicant_name }}</strong><br>
+        Name &amp; Signature<br>
+        Date:
+      </div>
+    </div>
+  </div>
 </div>
