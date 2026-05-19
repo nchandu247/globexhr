@@ -78,4 +78,9 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
     ACCESS-TOKEN header, x-greythr-domain header, Content-Type HTML trap, one-shot retry)
   - `tests/conftest.py` — frappe + ratelimit mocks, shared fixtures
   - `tests/test_client.py` — 11 tests, all passing offline
-- ⬜ **Tasks 1.1, 1.2:** greytHR Settings + greytHR Sync Log DocTypes. Next.
+- ✅ **Tasks 1.1, 1.2:** greytHR Settings + greytHR Sync Log DocTypes created via
+  Frappe v16 Form Builder. Permissions set (System Manager full, HR Manager read).
+- ✅ **Task 1.6:** test_connection verified live on site — HTTP 200, code runs cleanly,
+  Settings read correctly, dry_run mode works. Phase 1 fully verified.
+
+## Phase 1 — COMPLETE

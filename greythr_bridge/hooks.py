@@ -7,7 +7,12 @@ app_license = "Proprietary"
 required_apps = ["frappe/hrms"]  # does not require ERPNext
 
 # Fixtures auto-loaded on install
-# fixtures = ["Custom Field"]
+fixtures = [
+    {
+        "dt": "DocType",
+        "filters": [["module", "=", "greytHR"]],
+    }
+]
 
 # Scheduled jobs — wired in Phase 2+
 # scheduler_events = {
