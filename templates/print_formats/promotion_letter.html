@@ -1,0 +1,83 @@
+<!-- ============================================================
+     PROMOTION LETTER — bound to Employee Promotion DocType
+     ============================================================ -->
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; }
+  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+  .letterhead h2 { margin: 0; font-size: 16pt; }
+  .ref-date { display: flex; justify-content: space-between; margin-bottom: 16px; }
+  table.salary { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 10pt; }
+  table.salary th, table.salary td { border: 1px solid #999; padding: 5px 8px; }
+  table.salary th { background: #f0f0f0; font-weight: bold; }
+  table.salary td.right { text-align: right; }
+  .signature-block { margin-top: 40px; }
+</style>
+
+<div class="letterhead">
+  <h2>Globex Digital Solutions Pvt Ltd</h2>
+  <p>Hyderabad, India &nbsp;|&nbsp; hr@globexdigital.ai</p>
+</div>
+
+<div class="ref-date">
+  <span><strong>Ref:</strong> {{ doc.name }}</span>
+  <span><strong>Date:</strong> {{ frappe.utils.formatdate(frappe.utils.today(), "dd MMMM yyyy") }}</span>
+</div>
+
+<p>To,</p>
+<p>
+  <strong>{{ doc.employee_name }}</strong><br/>
+  Globex Digital Solutions Pvt Ltd
+</p>
+
+<p>Dear {{ doc.employee_name.split()[0] if doc.employee_name else "Employee" }},</p>
+
+<p>
+  We are delighted to inform you that, in recognition of your exceptional performance and
+  valuable contributions to Globex Digital Solutions Pvt Ltd, you have been promoted to the
+  position of <strong>
+    {% for row in doc.promotion_details %}
+      {% if loop.last %}{{ row.property_value }}{% endif %}
+    {% endfor %}
+  </strong>, effective
+  <strong>{{ frappe.utils.formatdate(doc.promotion_date, "dd MMMM yyyy") if doc.promotion_date else "[Effective Date]" }}</strong>.
+</p>
+
+<p>
+  Along with this promotion, your compensation has been revised. Please refer to Annexure A
+  for the details of your updated salary structure.
+</p>
+
+<p>
+  We congratulate you on this achievement and look forward to your continued growth and contributions.
+</p>
+
+<div class="signature-block">
+  <p>Yours sincerely,</p>
+  <br/>
+  <p>___________________________</p>
+  <p><strong>For Globex Digital Solutions Pvt Ltd</strong></p>
+  <p>Authorised Signatory</p>
+</div>
+
+<div style="page-break-before: always;">
+  <h3 style="text-align:center;">Annexure A — Revised Compensation</h3>
+  <p><strong>Employee:</strong> {{ doc.employee_name }} &nbsp;|&nbsp;
+     <strong>Effective Date:</strong> {{ frappe.utils.formatdate(doc.promotion_date, "dd MMMM yyyy") if doc.promotion_date else "" }}</p>
+
+  <table class="salary">
+    <tr>
+      <th>Component</th>
+      <th class="right">Monthly (₹)</th>
+      <th class="right">Annual (₹)</th>
+    </tr>
+    <tr><td>Basic</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>HRA</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Conveyance Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Medical Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Special Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold;"><td>Total Earnings (Gross)</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Employer PF</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold; background:#e8f4e8;"><td>Total CTC</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold;"><td>Net Take-Home</td><td class="right"></td><td class="right"></td></tr>
+  </table>
+</div>

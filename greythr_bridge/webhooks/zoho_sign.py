@@ -73,19 +73,7 @@ def callback():
 
         # ── 5. Dispatch — all real work is enqueued ────────────────────────────
         if operation_type == "RequestCompleted":
-            if letter_type == "nda" and docname:
-                frappe.enqueue(
-                    "greythr_bridge.hooks_handlers.job_offer.send_offer_letter",
-                    queue="short",
-                    offer_name=docname,
-                )
-                # Record signing timestamp
-                frappe.db.set_value(
-                    "Job Offer", docname, "custom_zoho_sign_signed_at",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                )
-
-            elif letter_type == "offer_letter" and docname:
+            if letter_type == "offer_letter" and docname:
                 frappe.enqueue(
                     "greythr_bridge.tasks.push_new_joiner.run",
                     queue="short",

@@ -1,0 +1,57 @@
+<!-- ============================================================
+     RELIEVING LETTER — bound to Employee Separation DocType
+     ============================================================ -->
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; }
+  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+  .letterhead h2 { margin: 0; font-size: 16pt; }
+  .ref-date { display: flex; justify-content: space-between; margin-bottom: 16px; }
+  .signature-block { margin-top: 50px; }
+</style>
+
+<div class="letterhead">
+  <h2>Globex Digital Solutions Pvt Ltd</h2>
+  <p>Hyderabad, India &nbsp;|&nbsp; hr@globexdigital.ai</p>
+</div>
+
+<div class="ref-date">
+  <span><strong>Ref:</strong> {{ doc.name }}</span>
+  <span><strong>Date:</strong> {{ frappe.utils.formatdate(frappe.utils.today(), "dd MMMM yyyy") }}</span>
+</div>
+
+<p>To,</p>
+<p>
+  <strong>{{ doc.employee_name }}</strong><br/>
+  Employee ID: {{ doc.employee }}<br/>
+  Designation: {{ doc.designation or "" }}
+</p>
+
+<p>Dear {{ doc.employee_name.split()[0] if doc.employee_name else "Employee" }},</p>
+
+<p>
+  This is to certify that your resignation dated
+  <strong>{{ frappe.utils.formatdate(doc.resignation_letter_date, "dd MMMM yyyy") if doc.resignation_letter_date else "[Resignation Date]" }}</strong>
+  has been accepted and you are hereby relieved from the services of Globex Digital Solutions Pvt Ltd
+  with effect from
+  <strong>{{ frappe.utils.formatdate(doc.last_working_day, "dd MMMM yyyy") if doc.last_working_day else "[Last Working Day]" }}</strong>.
+</p>
+
+<p>
+  You served with the organisation from
+  <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>
+  to
+  <strong>{{ frappe.utils.formatdate(doc.last_working_day, "dd MMMM yyyy") if doc.last_working_day else "[Last Working Day]" }}</strong>
+  in the capacity of <strong>{{ doc.designation or "[Designation]" }}</strong>.
+</p>
+
+<p>
+  We wish you the very best in your future endeavours.
+</p>
+
+<div class="signature-block">
+  <p>Yours sincerely,</p>
+  <br/>
+  <p>___________________________</p>
+  <p><strong>For Globex Digital Solutions Pvt Ltd</strong></p>
+  <p>Authorised Signatory</p>
+</div>

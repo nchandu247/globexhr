@@ -1,0 +1,152 @@
+<!-- ============================================================
+     OFFER LETTER — bound to Job Offer DocType
+     Copy this entire block into Frappe HR → Print Format → HTML
+     ============================================================ -->
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #000; margin: 0; }
+  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+  .letterhead h2 { margin: 0; font-size: 16pt; }
+  .letterhead p  { margin: 2px 0; font-size: 9pt; }
+  .body-text { line-height: 1.6; }
+  .section-title { font-weight: bold; text-decoration: underline; margin-top: 14px; }
+  table.salary { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }
+  table.salary th, table.salary td { border: 1px solid #999; padding: 5px 8px; }
+  table.salary th { background: #f0f0f0; font-weight: bold; }
+  table.salary td.right { text-align: right; }
+  .signature-block { margin-top: 40px; display: flex; justify-content: space-between; }
+  .signature-box { width: 45%; }
+  .acceptance { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 12px; font-size: 10pt; }
+  .ref-date { display: flex; justify-content: space-between; margin-bottom: 16px; }
+</style>
+
+<div class="letterhead">
+  <h2>Globex Digital Solutions Pvt Ltd</h2>
+  <p>Hyderabad, India &nbsp;|&nbsp; hr@globexdigital.ai</p>
+</div>
+
+<div class="ref-date">
+  <span><strong>Ref:</strong> {{ doc.name }}</span>
+  <span><strong>Date:</strong> {{ frappe.utils.formatdate(doc.offer_date or frappe.utils.today(), "dd MMMM yyyy") }}</span>
+</div>
+
+{% set applicant_first = doc.applicant_name.split()[0] if doc.applicant_name else "" %}
+
+<p>
+  Dear {{ applicant_first }},
+</p>
+
+<div class="body-text">
+  <p>
+    We are pleased to offer you the position of <strong>{{ doc.designation }}</strong> at
+    Globex Digital Solutions Pvt Ltd, subject to the terms and conditions set out in this letter.
+  </p>
+
+  <p class="section-title">1. Posting Location</p>
+  <p>
+    Your posting location will be <strong>Hyderabad</strong>. Transfers may be made at
+    the Company's discretion.
+  </p>
+
+  <p class="section-title">2. Date of Joining</p>
+  <p>
+    Your date of joining is <strong>{{ frappe.utils.formatdate(doc.date_of_joining, "dd MMMM yyyy") if doc.date_of_joining else "[Date of Joining]" }}</strong>.
+  </p>
+
+  <p class="section-title">3. Compensation</p>
+  <p>
+    Your gross annual CTC will be <strong>₹ {{ doc.custom_ctc or "[Annual CTC]" }}</strong> as detailed
+    in Annexure A. Salary components are subject to statutory deductions.
+  </p>
+
+  <p class="section-title">4. Introductory Period</p>
+  <p>
+    You will be on an introductory period of <strong>180 days</strong> from your date of joining,
+    during which either party may terminate employment by providing notice as per the separation clause below.
+  </p>
+
+  <p class="section-title">5. Income Tax</p>
+  <p>
+    Tax deducted at source (TDS) will be computed based on your total annual income as per applicable
+    provisions of the Income Tax Act, 1961. You are advised to submit investment declarations and proofs
+    to HR in a timely manner.
+  </p>
+
+  <p class="section-title">6. Conflict of Interest &amp; Background Verification</p>
+  <p>
+    This offer is conditional upon successful completion of background verification. You are required to
+    disclose any existing obligations, agreements, or potential conflicts of interest before your date of joining.
+  </p>
+
+  <p class="section-title">7. Separation</p>
+  <p>
+    Post-confirmation, either party may terminate employment by providing <strong>30 days' written notice</strong>
+    or payment in lieu thereof. The Company reserves the right to terminate employment without notice in cases
+    of misconduct, fraud, or breach of confidentiality obligations.
+  </p>
+
+  <p class="section-title">8. Benefits</p>
+  <ul>
+    <li>Group Medical Coverage (GMC): ₹3,00,000 per annum</li>
+    <li>Personal Accident Cover: ₹10,00,000 per annum</li>
+    <li>Leave entitlement as per the Company's Leave Policy</li>
+  </ul>
+
+  <p>
+    We look forward to you joining the Globex Digital Solutions team. Please sign and return a copy of
+    this letter as your acceptance.
+  </p>
+</div>
+
+<div class="signature-block">
+  <div class="signature-box">
+    <p>___________________________</p>
+    <p><strong>Authorised Signatory</strong></p>
+    <p>Globex Digital Solutions Pvt Ltd</p>
+  </div>
+  <div class="signature-box" style="text-align:right;">
+    <p>___________________________</p>
+    <p><strong>{{ doc.applicant_name }}</strong></p>
+    <p>Signature &amp; Date</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ ANNEXURE A — SALARY BREAKUP ═══════════════════ -->
+<div style="page-break-before: always;">
+  <h3 style="text-align:center;">Annexure A — Compensation Details</h3>
+  <p style="text-align:center;">{{ doc.applicant_name }} | {{ doc.designation }}</p>
+
+  <table class="salary">
+    <tr>
+      <th>Component</th>
+      <th class="right">Monthly (₹)</th>
+      <th class="right">Annual (₹)</th>
+    </tr>
+    <tr><td>Basic</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>HRA</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Conveyance Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Medical Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Special Allowance</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold;"><td>Total Earnings (Gross)</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td colspan="3" style="background:#f9f9f9;font-weight:bold;padding:4px 8px;">Deductions</td></tr>
+    <tr><td>Employee PF</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Employee ESI</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Professional Tax</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold;"><td>Net Take-Home</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td colspan="3" style="background:#f9f9f9;font-weight:bold;padding:4px 8px;">Employer Contributions</td></tr>
+    <tr><td>Employer PF</td><td class="right"></td><td class="right"></td></tr>
+    <tr><td>Medical Insurance</td><td class="right"></td><td class="right"></td></tr>
+    <tr style="font-weight:bold; background:#e8f4e8;"><td>Total CTC</td><td class="right"></td><td class="right">{{ doc.custom_ctc or "" }}</td></tr>
+  </table>
+  <p style="font-size:9pt; color:#555; margin-top:8px;">
+    * Salary components are indicative. Actual take-home may vary based on applicable tax declarations and statutory deductions.
+  </p>
+</div>
+
+<div class="acceptance">
+  <p><strong>Acceptance</strong></p>
+  <p>
+    I, <strong>{{ doc.applicant_name }}</strong>, hereby accept the offer of employment on the
+    terms and conditions stated in this letter.
+  </p>
+  <p>Signature: _______________________ &nbsp;&nbsp; Date: _______________________</p>
+</div>

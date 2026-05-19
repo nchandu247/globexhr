@@ -12,76 +12,17 @@ from ..utils.logging import log_error
 def on_offer_submitted(doc, method):
     """
     Triggered when a Job Offer is submitted.
-
-    Sends the NDA for signature first. The Offer Letter is only sent
-    after the NDA completion webhook is received (NDA-first flow).
+    Sends the Offer Letter directly for signature (no NDA step).
     """
     settings = frappe.get_single("greytHR Settings")
     if not settings.enabled:
         return
 
     frappe.enqueue(
-        "greythr_bridge.hooks_handlers.job_offer._send_nda",
+        "greythr_bridge.hooks_handlers.job_offer.send_offer_letter",
         queue="short",
         offer_name=doc.name,
     )
-
-
-def _send_nda(offer_name: str) -> None:
-    """
-    Generate and send the NDA for a submitted Job Offer.
-    Enqueued by on_offer_submitted — runs in background (queue=short).
-    """
-    try:
-        doc = frappe.get_doc("Job Offer", offer_name)
-        settings = frappe.get_single("greytHR Settings")
-
-        if not settings.default_signatory:
-            log_error(
-                f"_send_nda: no default_signatory in greytHR Settings for {offer_name}",
-                "greytHR Job Offer Error",
-            )
-            return
-
-        signatory = frappe.get_doc("User", settings.default_signatory)
-        applicant_email = _get_applicant_email(doc)
-
-        if not applicant_email:
-            log_error(
-                f"_send_nda: no applicant email for {offer_name}",
-                "greytHR Job Offer Error",
-            )
-            return
-
-        nda_pdf = _generate_pdf(doc, "NDA")
-        if not nda_pdf:
-            return  # error already logged in _generate_pdf
-
-        signers = [
-            {"name": signatory.full_name, "email": signatory.email, "order": 1},
-            {"name": doc.applicant_name, "email": applicant_email, "order": 2},
-        ]
-
-        request_id = send_for_signature(
-            pdf_bytes=nda_pdf,
-            document_name=f"NDA - {doc.applicant_name}",
-            signers=signers,
-            metadata={
-                "doctype": "Job Offer",
-                "docname": offer_name,
-                "letter_type": "nda",
-            },
-        )
-
-        frappe.db.set_value(
-            "Job Offer", offer_name, "custom_zoho_sign_nda_request_id", request_id
-        )
-
-    except Exception as exc:
-        log_error(
-            f"_send_nda: {offer_name} error={str(exc)[:200]}",
-            "greytHR NDA Send Error",
-        )
 
 
 def send_offer_letter(offer_name: str) -> None:
