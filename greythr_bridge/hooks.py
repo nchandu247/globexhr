@@ -19,19 +19,21 @@ scheduler_events = {
     "cron": {
         "*/15 * * * *": ["greythr_bridge.tasks.pull_employees.run"],      # Phase 2
         "0 20 * * *":   ["greythr_bridge.tasks.pull_salary_structures.run"],  # Phase 3
-        # "0 21 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],          # Phase 5
+        "0 21 * * *":   ["greythr_bridge.tasks.stalled_signings.run"],         # Phase 5
+        # "0 22 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],          # Phase 5
     }
 }
 
-# Document event handlers — wired in Phase 5+
-# doc_events = {
-#     "Job Offer": {
-#         "on_submit": "greythr_bridge.hooks_handlers.job_offer.on_offer_submitted",
-#     },
-#     "Salary Structure Assignment": {
-#         "on_submit": "greythr_bridge.hooks_handlers.salary_assignment.on_submit",
-#     },
-#     "Employee": {
-#         "on_update": "greythr_bridge.hooks_handlers.employee.on_update",
-#     },
-# }
+# Document event handlers
+doc_events = {
+    "Job Offer": {
+        "on_submit": "greythr_bridge.hooks_handlers.job_offer.on_offer_submitted",
+    },
+    # Phase 6:
+    # "Salary Structure Assignment": {
+    #     "on_submit": "greythr_bridge.hooks_handlers.salary_assignment.on_submit",
+    # },
+    # "Employee": {
+    #     "on_update": "greythr_bridge.hooks_handlers.employee.on_update",
+    # },
+}
