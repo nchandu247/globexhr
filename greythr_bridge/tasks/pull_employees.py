@@ -82,9 +82,16 @@ def _pull(triggered_by: str = "Scheduled") -> None:
 
             page += 1
 
-        # Only advance the cursor on full success
-        settings.last_employee_sync = started_at.strftime("%Y-%m-%d %H:%M:%S")
-        settings.save(ignore_permissions=True)
+        # Only advance the cursor on full success.
+        # Use db.set_value to avoid version conflict — GreytHRClient saves settings
+        # multiple times during the run (to cache token), making the local settings
+        # object stale by the time we get here.
+        frappe.db.set_value(
+            "greytHR Settings",
+            "greytHR Settings",
+            "last_employee_sync",
+            started_at.strftime("%Y-%m-%d %H:%M:%S"),
+        )
         _finish_sync_log(sync_log, "Success", counters, errors)
 
     except Exception as exc:
