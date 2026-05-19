@@ -52,9 +52,19 @@ class GreytHRClient:
         now = datetime.now()
         expires_at = self.settings.token_expires_at
 
+        # Frappe Datetime fields return datetime objects OR strings depending on context.
+        # Normalise to datetime for comparison; store as string to avoid Frappe's
+        # internal validator iterating over the datetime object (Frappe v16 bug).
+        if expires_at and isinstance(expires_at, str):
+            try:
+                expires_at = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                expires_at = None
+
         if (
             self.settings.cached_token
             and expires_at
+            and isinstance(expires_at, datetime)
             and expires_at > now + timedelta(minutes=5)
         ):
             return self.settings.get_password("cached_token")
@@ -76,10 +86,13 @@ class GreytHRClient:
             )
 
         token_data = resp.json()
+        expires_in = token_data.get("expires_in", 3_888_000)
         self.settings.cached_token = token_data["access_token"]
-        self.settings.token_expires_at = now + timedelta(
-            seconds=token_data.get("expires_in", 3_888_000)
-        )
+        # Store as string — Frappe v16 iterates over datetime objects during field
+        # validation, causing TypeError. Always store datetimes as strings in Settings.
+        self.settings.token_expires_at = (
+            now + timedelta(seconds=expires_in)
+        ).strftime("%Y-%m-%d %H:%M:%S")
         self.settings.save(ignore_permissions=True)
         return token_data["access_token"]
 
