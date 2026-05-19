@@ -16,6 +16,7 @@ from greythr_bridge.api.zoho_sign import (
 )
 
 ZOHO_BASE = "https://sign.zoho.in/api/v1"
+ZOHO_TOKEN_URL = "https://accounts.zoho.in/oauth/v2/token"
 SECRET = "test_webhook_secret_abc"
 
 
@@ -23,6 +24,16 @@ SECRET = "test_webhook_secret_abc"
 
 def _make_sig(payload: bytes, secret: str = SECRET) -> str:
     return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+
+def _add_token_mock():
+    """Register a mock OAuth token response."""
+    rsps_lib.add(
+        rsps_lib.POST,
+        ZOHO_TOKEN_URL,
+        json={"access_token": "test_access_token", "expires_in": 3600},
+        status=200,
+    )
 
 
 def _signers():
@@ -68,8 +79,12 @@ def test_tampered_payload_returns_false():
 
 @rsps_lib.activate
 def test_send_for_signature_returns_request_id(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
+    _add_token_mock()
     rsps_lib.add(
         rsps_lib.POST,
         f"{ZOHO_BASE}/requests",
@@ -88,52 +103,55 @@ def test_send_for_signature_returns_request_id(patch_frappe, settings):
 
 @rsps_lib.activate
 def test_send_for_signature_raises_on_error(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
+    _add_token_mock()
     rsps_lib.add(
         rsps_lib.POST,
         f"{ZOHO_BASE}/requests",
-        json={"message": "Invalid API key"},
-        status=401,
+        json={"message": "Bad request"},
+        status=400,
     )
 
     from greythr_bridge.api.exceptions import ZohoSignError
-    with pytest.raises(ZohoSignError, match="401"):
+    with pytest.raises(ZohoSignError, match="400"):
         send_for_signature(b"%PDF", "Test", _signers(), _metadata())
 
 
 @rsps_lib.activate
-def test_send_for_signature_signers_are_ordered(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+def test_token_refresh_called_when_no_cache(patch_frappe, settings):
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
-    captured = {}
-
-    def request_callback(request):
-        captured["data"] = request.body
-        return (200, {}, json.dumps({"requests": {"request_id": "REQ-002"}}))
-
-    rsps_lib.add_callback(rsps_lib.POST, f"{ZOHO_BASE}/requests", request_callback)
-
-    send_for_signature(
-        pdf_bytes=b"%PDF",
-        document_name="Test",
-        signers=[
-            {"name": "Candidate", "email": "c@c.com", "order": 2},
-            {"name": "HR", "email": "hr@hr.com", "order": 1},  # out of order
-        ],
-        metadata=_metadata(),
+    _add_token_mock()
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests",
+        json={"requests": {"request_id": "REQ-003"}},
+        status=200,
     )
-    # Verify signers were sorted by order (HR first)
-    assert "REQ-002" is not None  # request succeeded with sorted signers
+
+    send_for_signature(b"%PDF", "Test", _signers(), _metadata())
+    token_calls = [c for c in rsps_lib.calls if ZOHO_TOKEN_URL in c.request.url]
+    assert len(token_calls) == 1
 
 
 # ── get_signed_document ───────────────────────────────────────────────────────
 
 @rsps_lib.activate
 def test_get_signed_document_returns_bytes(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
     pdf_content = b"%PDF-1.4 signed content"
 
+    _add_token_mock()
     rsps_lib.add(
         rsps_lib.GET,
         f"{ZOHO_BASE}/requests/REQ-001/pdf",
@@ -147,8 +165,12 @@ def test_get_signed_document_returns_bytes(patch_frappe, settings):
 
 @rsps_lib.activate
 def test_get_signed_document_raises_on_error(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
+    _add_token_mock()
     rsps_lib.add(
         rsps_lib.GET,
         f"{ZOHO_BASE}/requests/REQ-001/pdf",
@@ -165,26 +187,26 @@ def test_get_signed_document_raises_on_error(patch_frappe, settings):
 
 @rsps_lib.activate
 def test_resend_signing_request_succeeds(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
-    rsps_lib.add(
-        rsps_lib.POST,
-        f"{ZOHO_BASE}/requests/REQ-001/remind",
-        status=200,
-    )
+    _add_token_mock()
+    rsps_lib.add(rsps_lib.POST, f"{ZOHO_BASE}/requests/REQ-001/remind", status=200)
 
     resend_signing_request("REQ-001")  # should not raise
 
 
 @rsps_lib.activate
 def test_resend_signing_request_raises_on_error(patch_frappe, settings):
-    settings.get_password.return_value = "test_api_key"
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
 
-    rsps_lib.add(
-        rsps_lib.POST,
-        f"{ZOHO_BASE}/requests/REQ-001/remind",
-        status=400,
-    )
+    _add_token_mock()
+    rsps_lib.add(rsps_lib.POST, f"{ZOHO_BASE}/requests/REQ-001/remind", status=400)
 
     from greythr_bridge.api.exceptions import ZohoSignError
     with pytest.raises(ZohoSignError, match="400"):

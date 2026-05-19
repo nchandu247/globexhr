@@ -20,14 +20,77 @@ import requests
 from .exceptions import ZohoSignError
 
 _BASE = "https://sign.zoho.in/api/v1"
+_TOKEN_URL = "https://accounts.zoho.in/oauth/v2/token"
 
 
-# ── internal helpers ──────────────────────────────────────────────────────────
+# ── OAuth token management ────────────────────────────────────────────────────
+
+def _get_access_token() -> str:
+    """
+    Return a valid Zoho Sign access token, refreshing via OAuth if expired.
+
+    Access tokens are valid for 1 hour. We cache them in greytHR Settings and
+    refresh automatically when they expire (or are within 5 minutes of expiry).
+    The refresh token is long-lived and never expires.
+
+    Token endpoint (India DC): https://accounts.zoho.in/oauth/v2/token
+    """
+    from datetime import datetime, timedelta
+    from frappe.utils.password import set_encrypted_password
+
+    settings = frappe.get_single("greytHR Settings")
+    now = datetime.now()
+
+    # Check cached access token
+    expires_at_str = settings.zoho_sign_token_expires_at
+    expires_at = None
+    if expires_at_str:
+        try:
+            expires_at = datetime.strptime(expires_at_str, "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            expires_at = None
+
+    if (
+        settings.zoho_sign_access_token
+        and expires_at
+        and expires_at > now + timedelta(minutes=5)
+    ):
+        return settings.get_password("zoho_sign_access_token")
+
+    # Access token missing or expiring — exchange refresh token for new access token
+    resp = requests.post(
+        _TOKEN_URL,
+        params={
+            "grant_type":    "refresh_token",
+            "client_id":     settings.zoho_sign_client_id,
+            "client_secret": settings.get_password("zoho_sign_client_secret"),
+            "refresh_token": settings.get_password("zoho_sign_refresh_token"),
+        },
+        timeout=15,
+    )
+
+    if resp.status_code != 200:
+        raise ZohoSignError(
+            f"Zoho Sign token refresh failed: HTTP {resp.status_code}: {resp.text[:200]}"
+        )
+
+    token_data = resp.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise ZohoSignError(f"No access_token in Zoho Sign response: {resp.text[:200]}")
+
+    expires_in = token_data.get("expires_in", 3600)
+    expires_at_new = (now + timedelta(seconds=expires_in)).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Store as encrypted password; store expiry as plain string
+    set_encrypted_password("greytHR Settings", "greytHR Settings", "zoho_sign_access_token", access_token)
+    frappe.db.set_value("greytHR Settings", "greytHR Settings", "zoho_sign_token_expires_at", expires_at_new)
+
+    return access_token
+
 
 def _headers() -> dict:
-    settings = frappe.get_single("greytHR Settings")
-    api_key = settings.get_password("zoho_sign_api_key")
-    return {"Authorization": f"Zoho-oauthtoken {api_key}"}
+    return {"Authorization": f"Zoho-oauthtoken {_get_access_token()}"}
 
 
 # ── public API ────────────────────────────────────────────────────────────────

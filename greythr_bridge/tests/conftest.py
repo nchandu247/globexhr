@@ -12,10 +12,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# ── 1. Mock frappe ────────────────────────────────────────────────────────────
+# ── 1. Mock frappe and submodules ─────────────────────────────────────────────
 frappe_mock = MagicMock()
 frappe_mock.logger.return_value = MagicMock()
 sys.modules.setdefault("frappe", frappe_mock)
+
+# Mock frappe submodules so `from frappe.utils.password import ...` works in tests
+_frappe_utils_password = MagicMock()
+_frappe_utils_password.set_encrypted_password = MagicMock()
+sys.modules.setdefault("frappe.utils", MagicMock())
+sys.modules.setdefault("frappe.utils.password", _frappe_utils_password)
 
 # ── 2. Mock ratelimit → no-op decorators so tests run without sleeping ────────
 ratelimit_mock = MagicMock()
