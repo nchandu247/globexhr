@@ -285,7 +285,9 @@ This notice period is applicable in cases including but not limited to:</p>
   {% set er_pf   = doc.custom_employer_pf or 0 %}
   {% set er_ins  = doc.custom_employer_insurance or 0 %}
   {% set er_ded  = er_pf + er_ins %}
-  {% set ctc_ann = doc.custom_ctc or (gross_m + er_ded) * 12 %}
+  {% set med_ins = ((doc.custom_medical_insurance_annual or 0) / 12) | round | int
+                   if (eesi == 0 and not doc.custom_medical_opted_out) else 0 %}
+  {% set ctc_ann = doc.custom_ctc or ((gross_m + er_ded + med_ins) * 12) %}
 
   <table class="sal">
     <tr>
@@ -327,9 +329,11 @@ This notice period is applicable in cases including but not limited to:</p>
 
     <!-- Employee Deductions -->
     <tr class="sub-head"><td colspan="3">Employee Deductions</td></tr>
+    {% if not doc.custom_pf_opted_out %}
     <tr><td>Provident Fund</td>
         <td class="r">{{ "{:,.0f}".format(epf) }}</td>
         <td class="r">{{ "{:,.0f}".format(epf * 12) }}</td></tr>
+    {% endif %}
     <tr><td>ESI / Medical Benefits</td>
         <td class="r">{{ "{:,.0f}".format(eesi) }}</td>
         <td class="r">{{ "{:,.0f}".format(eesi * 12) }}</td></tr>
@@ -341,18 +345,29 @@ This notice period is applicable in cases including but not limited to:</p>
         <td class="r">{{ "{:,.0f}".format(ded_m) }}</td>
         <td class="r">{{ "{:,.0f}".format(ded_m * 12) }}</td></tr>
 
-    <!-- Employer Deductions -->
+    <!-- Employer Contributions -->
     <tr class="sub-head"><td colspan="3">Employer Contributions</td></tr>
-    <tr><td>Provident Fund</td>
+    {% if not doc.custom_pf_opted_out %}
+    <tr><td>Provident Fund + EDLI + Admin</td>
         <td class="r">{{ "{:,.0f}".format(er_pf) }}</td>
         <td class="r">{{ "{:,.0f}".format(er_pf * 12) }}</td></tr>
-    <tr><td>ESI / Medical &amp; Insurance Benefits</td>
+    {% endif %}
+    {% if eesi > 0 %}
+    <tr><td>ESI (Employer)</td>
         <td class="r">{{ "{:,.0f}".format(er_ins) }}</td>
         <td class="r">{{ "{:,.0f}".format(er_ins * 12) }}</td></tr>
+    {% endif %}
+    {% set med_annual = doc.custom_medical_insurance_annual or 0 %}
+    {% set med_monthly = (med_annual / 12) | round | int %}
+    {% if eesi == 0 and not doc.custom_medical_opted_out and med_annual > 0 %}
+    <tr><td>Medical Insurance (Employer)</td>
+        <td class="r">{{ "{:,.0f}".format(med_monthly) }}</td>
+        <td class="r">{{ "{:,.0f}".format(med_annual) }}</td></tr>
+    {% endif %}
     <tr class="total-row">
         <td>Total Employer Contributions (C)</td>
-        <td class="r">{{ "{:,.0f}".format(er_ded) }}</td>
-        <td class="r">{{ "{:,.0f}".format(er_ded * 12) }}</td></tr>
+        <td class="r">{{ "{:,.0f}".format(er_ded + med_monthly) }}</td>
+        <td class="r">{{ "{:,.0f}".format((er_ded + med_monthly) * 12) }}</td></tr>
 
     <!-- Net and CTC -->
     <tr class="total-row">
