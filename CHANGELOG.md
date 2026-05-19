@@ -115,3 +115,25 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   3. greytHR Settings version conflict (GreytHRClient saves settings mid-run) → db.set_value
 
 ## Phase 2 — COMPLETE
+
+---
+
+## [Unreleased] — Phase 3
+
+### Phase 3 — Pull Salary Structures
+
+- ✅ **Task 3.1:** `api/payroll.py` — get_salary_repository(), get_employee_salary(),
+  list_employee_salaries() (employee salary endpoints pending Essential plan verification).
+- ✅ **Task 3.2:** `mappers/salary_mapper.py` — recursive tree-walk to flatten greytHR
+  salary tree, component_to_frappe() with known abbreviation table, type mapping.
+  14 mapper tests passing.
+- ✅ **Task 3.3 (partial):** `tasks/pull_salary_structures.py` — Salary Component sync
+  only. Employee SSA mirroring deferred until employee salary endpoint verified.
+- ✅ **Task 3.4:** Scheduler wired — pull_salary_structures.run daily at 2AM IST.
+- ✅ **Phase 3 live verified:** 176 salary components synced (175 created, 1 updated,
+  0 failed). Tree-walk correctly flattened 3 top-level greytHR salary trees.
+- ⬜ **Task 3.5:** "Sync Salary from greytHR" button on Employee form. Deferred (UI task).
+- ⬜ **Employee SSA mirroring** (task 3.3 remainder): deferred until employee salary
+  endpoint verified on Essential plan.
+
+## Phase 3 — COMPLETE (partial — SSA mirroring deferred)
