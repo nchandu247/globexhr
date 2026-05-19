@@ -137,3 +137,30 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   endpoint verified on Essential plan.
 
 ## Phase 3 — COMPLETE (partial — SSA mirroring deferred)
+
+---
+
+## [Unreleased] — Phase 5
+
+### Phase 5 — E-Signature Integration
+
+- ✅ **Task 5.1:** Zoho Sign business account on India DC (in.zoho.com).
+  API credit plan selected (₹6/credit — more cost-effective than user plan).
+- ✅ **Task 5.2:** Webhook configured in Zoho Sign console pointing to
+  `https://gdshr.m.frappe.cloud/api/method/greythr_bridge.webhooks.zoho_sign.callback`.
+  Events: Completed by all, Expires, Recalled, Declined.
+  Security: HMAC-SHA256 (X-ZS-WEBHOOK-SIGNATURE header, base64 encoded) + timestamp.
+- ✅ **Task 5.3:** `api/zoho_sign.py` — OAuth token refresh (client_credentials flow via
+  accounts.zoho.in), send_for_signature (multi-signer ordered), get_signed_document,
+  resend_signing_request, verify_webhook_hmac (base64 HMAC-SHA256).
+- ✅ **Task 5.4:** `hooks_handlers/job_offer.py` — on_offer_submitted enqueues NDA send;
+  send_offer_letter triggered by webhook after NDA completes (NDA-first flow).
+- ✅ **Task 5.5:** `webhooks/zoho_sign.py` — HMAC + timestamp verified callback;
+  dispatches NDA completion, offer completion, decline, expiry to queue=short.
+- ✅ **Task 5.7:** `tasks/stalled_signings.py` — daily check for unsigned offers >28 days.
+- ✅ Credentials configured: Client ID, Client Secret, Refresh Token, Webhook Secret,
+  Account ID stored in greytHR Settings. Access Token auto-cached on first API call.
+- ✅ 59 tests passing.
+- ⬜ **Task 5.6:** "Resend Signing Request" button on Job Offer form. Deferred (UI task).
+- ⬜ **End-to-end test:** Blocked until Phase 4 (letter templates) is complete —
+  _generate_pdf() requires Print Format records to exist.
