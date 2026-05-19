@@ -47,12 +47,17 @@ def _pull(triggered_by: str = "Scheduled") -> None:
     errors = []
 
     try:
+        # Frappe Datetime fields return datetime objects — convert to string for API params
+        last_sync = settings.last_employee_sync
+        if isinstance(last_sync, datetime):
+            last_sync = last_sync.strftime("%Y-%m-%d %H:%M:%S")
+
         page = 1
         while True:
             result = list_employees(
                 page=page,
                 size=50,
-                updated_after=settings.last_employee_sync,
+                updated_after=last_sync,
             )
             employees = result.get("data", [])
             if not employees:
