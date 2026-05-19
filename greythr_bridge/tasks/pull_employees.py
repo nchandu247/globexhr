@@ -128,6 +128,9 @@ def _sync_one(greythr_emp: dict) -> str:
             "%Y-%m-%d %H:%M:%S"
         )
         if changed:
+            # ignore_mandatory: syncing from external system — not all Frappe-required
+            # fields (gender, date_of_birth) are available in greytHR's list endpoint
+            frappe_employee.flags.ignore_mandatory = True
             frappe_employee.save(ignore_permissions=True)
         _upsert_mapping(frappe_employee.name, greythr_id, greythr_emp.get("employeeNo"))
         return "updated"
@@ -141,6 +144,8 @@ def _sync_one(greythr_emp: dict) -> str:
             doc.set(field, value)
 
         doc.custom_greythr_last_synced = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # ignore_mandatory: gender, date_of_birth not available in greytHR list endpoint
+        doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True)
         _upsert_mapping(doc.name, greythr_id, greythr_emp.get("employeeNo"))
         return "created"

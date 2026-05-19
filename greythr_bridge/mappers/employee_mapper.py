@@ -52,12 +52,18 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
             result["date_of_joining"] = parsed
 
     # ── status — inferred from leavingDate on the employee list ───────────────
+    # leavingDate present on the main employee list — no separate separation call needed.
+    # Only set status="Left" if we can also set relieving_date; Frappe requires both.
     leaving_date = greythr_employee.get("leavingDate")
     if leaving_date:
-        result["status"] = "Left"
         parsed_ld = _parse_date(leaving_date, errors, field="leavingDate")
         if parsed_ld:
+            result["status"] = "Left"
             result["relieving_date"] = parsed_ld
+        else:
+            # Date unparseable — mark active to avoid Frappe's relieving_date validation.
+            # The mapping error is already recorded; HR can correct manually.
+            result["status"] = "Active"
     else:
         result["status"] = "Active"
 
