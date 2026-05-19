@@ -100,4 +100,10 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 - ✅ **Task 2.8:** 22 tests passing (test_mappers.py + test_pull_employees.py).
   Fixed conftest mock reset bug (call_args_list accumulated across tests).
 - ✅ Pre-task decisions: fitToBeRehired=capture, onboardingStatus=ignore, email=company_email.
-- ⬜ **Tasks 2.1, 2.2:** greytHR Employee Mapping DocType + custom Employee fields. Deferred.
+- ✅ **Task 2.1:** greytHR Employee Mapping DocType created (Frappe v16 Form Builder).
+  Fields: frappe_employee (Link), greythr_employee_id, greythr_employee_no, sync_status
+  (Select), last_sync_error, first/last/last_pushed timestamps.
+- ✅ **Task 2.2:** Custom fields confirmed on Employee (all 5 existed from earlier session).
+  Custom fields added to Job Offer (custom_zoho_sign_request_id, custom_zoho_sign_nda_request_id,
+  custom_zoho_sign_signed_at, custom_signed_pdf_pushed) and Salary Structure Assignment
+  (custom_pushed_to_greythr). All UI tasks across phases batched and complete.

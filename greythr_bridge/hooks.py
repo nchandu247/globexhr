@@ -14,14 +14,14 @@ fixtures = [
     }
 ]
 
-# Scheduled jobs — wired in Phase 2+
-# scheduler_events = {
-#     "cron": {
-#         "*/15 * * * *": ["greythr_bridge.tasks.pull_employees.run"],
-#         "0 20 * * *":   ["greythr_bridge.tasks.pull_salary_structures.run"],
-#         "0 21 * * *":   ["greythr_bridge.tasks.reconcile_drift.run"],
-#     }
-# }
+# Scheduled jobs
+scheduler_events = {
+    "cron": {
+        "*/15 * * * *": ["greythr_bridge.tasks.pull_employees.run"],      # Phase 2
+        # "0 20 * * *": ["greythr_bridge.tasks.pull_salary_structures.run"],  # Phase 3
+        # "0 21 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],          # Phase 5
+    }
+}
 
 # Document event handlers — wired in Phase 5+
 # doc_events = {
