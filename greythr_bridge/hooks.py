@@ -18,7 +18,7 @@ fixtures = [
 scheduler_events = {
     "cron": {
         "*/15 * * * *": ["greythr_bridge.tasks.pull_employees.run"],      # Phase 2
-        # "0 20 * * *": ["greythr_bridge.tasks.pull_salary_structures.run"],  # Phase 3
+        "0 20 * * *":   ["greythr_bridge.tasks.pull_salary_structures.run"],  # Phase 3
         # "0 21 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],          # Phase 5
     }
 }
