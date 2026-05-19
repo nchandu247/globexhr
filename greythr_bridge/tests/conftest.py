@@ -46,6 +46,7 @@ def settings():
 @pytest.fixture(autouse=True)
 def patch_frappe(settings):
     """Wire frappe.get_single to return the mock settings for every test."""
+    frappe_mock.reset_mock()  # clear call_args_list accumulated from previous tests
     frappe_mock.get_single.return_value = settings
     frappe_mock.logger.return_value.info = MagicMock()
     yield frappe_mock

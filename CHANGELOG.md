@@ -84,3 +84,20 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   Settings read correctly, dry_run mode works. Phase 1 fully verified.
 
 ## Phase 1 — COMPLETE
+
+---
+
+## [Unreleased] — Phase 2
+
+### Phase 2 — Pull Employees (code complete, UI tasks deferred)
+
+- ✅ **Task 2.3:** `mappers/employee_mapper.py` — greythr_to_frappe() with date conversion,
+  status inference from leavingDate, fitToBeRehired→custom_fit_to_rehire, email→company_email.
+- ✅ **Task 2.4:** `api/employee.py` — list_employees(), get_employee(),
+  list_employee_work_details(), list_employee_separations().
+- ✅ **Task 2.5:** `tasks/pull_employees.py` — paginated pull with matching priority chain,
+  duplicate email detection, sync log, failure notifications, dry_run support.
+- ✅ **Task 2.8:** 22 tests passing (test_mappers.py + test_pull_employees.py).
+  Fixed conftest mock reset bug (call_args_list accumulated across tests).
+- ✅ Pre-task decisions: fitToBeRehired=capture, onboardingStatus=ignore, email=company_email.
+- ⬜ **Tasks 2.1, 2.2:** greytHR Employee Mapping DocType + custom Employee fields. Deferred.
