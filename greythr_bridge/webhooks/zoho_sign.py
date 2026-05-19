@@ -55,7 +55,7 @@ def callback():
         notifications = data.get("notifications", {})
 
         # ── 3. Timestamp replay protection (5-minute window) ───────────────────
-        if not _within_time_window(notifications):
+        if not _within_time_window():
             frappe.local.response["http_status_code"] = 400
             return {"error": "Request timestamp out of acceptable range"}
 
@@ -176,39 +176,24 @@ def _notify_hr(docname: str, message: str) -> None:
 
 def _get_signature() -> str:
     """
-    Extract the HMAC signature from the incoming request.
-
-    TODO: Confirm the exact header name after configuring your webhook in
-    the Zoho Sign console (Settings → Developer → Webhooks). Common names:
-      - X-Zoho-Sign-Signature
-      - X-Zoho-Sign-Hmac-Sha256
-    Update the header name below accordingly.
+    Extract the HMAC-SHA256 signature from the X-ZS-WEBHOOK-SIGNATURE header.
+    Zoho Sign encodes the signature as base64.
     """
-    return (
-        frappe.request.headers.get("X-Zoho-Sign-Signature")
-        or frappe.request.headers.get("X-Zoho-Sign-Hmac-Sha256")
-        or ""
-    )
+    return frappe.request.headers.get("X-ZS-WEBHOOK-SIGNATURE", "")
 
 
-def _within_time_window(notifications: dict, window_minutes: int = 5) -> bool:
+def _within_time_window(window_minutes: int = 5) -> bool:
     """
-    Check that the webhook timestamp is within `window_minutes` of now.
+    Check that the X-ZS-WEBHOOK-TIMESTAMP header is within window_minutes of now.
+    Timestamp is a Unix timestamp in seconds.
     Prevents replay attacks.
-
-    TODO: Confirm the timestamp field name in Zoho Sign's webhook payload.
-    Common options: 'timestamp', 'request_created_time', 'action_time'.
-    If Zoho Sign does not include a timestamp, remove this check and rely
-    solely on HMAC verification.
     """
-    # If no timestamp in payload, skip the check (be permissive rather than
-    # breaking all webhooks — log a warning instead)
-    ts_raw = notifications.get("timestamp") or notifications.get("request_created_time")
+    ts_raw = frappe.request.headers.get("X-ZS-WEBHOOK-TIMESTAMP", "")
     if not ts_raw:
-        return True  # no timestamp field — rely on HMAC alone
+        return True  # no timestamp — rely on HMAC alone
 
     try:
-        ts = datetime.fromtimestamp(int(ts_raw) / 1000)  # assume milliseconds
+        ts = datetime.fromtimestamp(int(ts_raw))  # Unix seconds
         return abs((datetime.now() - ts).total_seconds()) < window_minutes * 60
     except (ValueError, TypeError):
-        return True  # unparseable timestamp — rely on HMAC alone
+        return True  # unparseable — rely on HMAC alone

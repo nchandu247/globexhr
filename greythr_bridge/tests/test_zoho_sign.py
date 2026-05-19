@@ -23,7 +23,10 @@ SECRET = "test_webhook_secret_abc"
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _make_sig(payload: bytes, secret: str = SECRET) -> str:
-    return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    import base64
+    return base64.b64encode(
+        hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    ).decode("utf-8")
 
 
 def _add_token_mock():

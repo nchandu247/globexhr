@@ -203,20 +203,22 @@ def verify_webhook_hmac(payload_bytes: bytes, received_signature: str, secret: s
     """
     Verify a Zoho Sign webhook HMAC-SHA256 signature.
 
-    Computes HMAC-SHA256(key=secret, msg=payload_bytes) and compares
-    with the received signature using a constant-time comparison to
-    prevent timing attacks.
+    Zoho Sign sends the signature in the X-ZS-WEBHOOK-SIGNATURE header,
+    encoded as base64 (not hex). The HMAC is computed over the raw request body
+    using the webhook secret (whsec_... format) as the key.
 
-    NOTE: Confirm the exact header name Zoho Sign uses for the signature
-    (e.g. X-Zoho-Sign-Signature) once your webhook is configured in the console.
+    Uses constant-time comparison to prevent timing attacks.
 
     Returns True if valid, False if tampered or missing.
     """
+    import base64
     if not received_signature or not secret:
         return False
-    expected = hmac.new(
-        secret.encode("utf-8"),
-        payload_bytes,
-        hashlib.sha256,
-    ).hexdigest()
+    expected = base64.b64encode(
+        hmac.new(
+            secret.encode("utf-8"),
+            payload_bytes,
+            hashlib.sha256,
+        ).digest()
+    ).decode("utf-8")
     return hmac.compare_digest(expected, received_signature)
