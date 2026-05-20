@@ -1,6 +1,7 @@
 [
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_band",
   "dt": "Job Offer",
   "fieldname": "custom_band",
   "label": "Band",
@@ -11,6 +12,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_work_location",
   "dt": "Job Offer",
   "fieldname": "custom_work_location",
   "label": "Work Location",
@@ -21,6 +23,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_reporting_to",
   "dt": "Job Offer",
   "fieldname": "custom_reporting_to",
   "label": "Reporting To",
@@ -31,6 +34,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_probation_period",
   "dt": "Job Offer",
   "fieldname": "custom_probation_period",
   "label": "Probation Period",
@@ -41,6 +45,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_notice_period",
   "dt": "Job Offer",
   "fieldname": "custom_notice_period",
   "label": "Notice Period",
@@ -51,6 +56,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_joining_bonus",
   "dt": "Job Offer",
   "fieldname": "custom_joining_bonus",
   "label": "Joining Bonus",
@@ -61,6 +67,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_variable_pay_annual",
   "dt": "Job Offer",
   "fieldname": "custom_variable_pay_annual",
   "label": "Variable Pay (Annual)",
@@ -71,6 +78,7 @@
  },
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_acceptance_deadline",
   "dt": "Job Offer",
   "fieldname": "custom_acceptance_deadline",
   "label": "Acceptance Deadline",

@@ -348,8 +348,32 @@ def health_check() -> dict:
         "merge_only_ok": False,
         "merge_to_pdf_ok": False,
         "pdf_bytes": 0,
+        "job_offer_custom_fields_total": 0,
+        "expected_new_fields_present": [],
+        "expected_new_fields_missing": [],
         "errors": [],
     }
+
+    # 0. Custom Field installation check
+    try:
+        all_jo_fields = frappe.get_all(
+            "Custom Field",
+            filters={"dt": "Job Offer"},
+            pluck="fieldname",
+        )
+        result["job_offer_custom_fields_total"] = len(all_jo_fields)
+        expected = {
+            "custom_band", "custom_work_location", "custom_reporting_to",
+            "custom_probation_period", "custom_notice_period",
+            "custom_joining_bonus", "custom_variable_pay_annual",
+            "custom_acceptance_deadline",
+        }
+        present = expected & set(all_jo_fields)
+        missing = expected - set(all_jo_fields)
+        result["expected_new_fields_present"] = sorted(present)
+        result["expected_new_fields_missing"] = sorted(missing)
+    except Exception as exc:
+        result["errors"].append(f"custom_field listing: {exc!r}")
 
     # 1. docxtpl
     try:
