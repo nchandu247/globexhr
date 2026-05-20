@@ -163,7 +163,7 @@
 <p class="section-title">Salary</p>
 <p>
   We are pleased to inform you that your salary will be
-  <strong>₹ {{ doc.custom_ctc or "[Annual CTC]" }}</strong> per annum. You will receive your salary through
+  <strong>₹ {{ doc.custom_annual_ctc or "[Annual CTC]" }}</strong> per annum. You will receive your salary through
   our standard payroll schedule, with your first paycheck scheduled for the 7th of the following month.
   Please note that this salary is subject to adjustment in accordance with our employee compensation policies,
   as detailed in Annexure A.
@@ -271,23 +271,23 @@ This notice period is applicable in cases including but not limited to:</p>
   <p class="annexure-sub">Salary Breakup for {{ doc.applicant_name }}</p>
 
   {# ── Computed values (monthly arithmetic in Jinja) ── #}
-  {% set basic   = doc.custom_basic or 0 %}
-  {% set hra     = doc.custom_hra or 0 %}
-  {% set conv    = doc.custom_conveyance or 0 %}
-  {% set med     = doc.custom_medical_allowance or 0 %}
-  {% set special = doc.custom_special_allowance or 0 %}
+  {% set basic   = doc.custom_basic_monthly or 0 %}
+  {% set hra     = doc.custom_hra_monthly or 0 %}
+  {% set conv    = doc.custom_conveyance_allowance_monthly or 0 %}
+  {% set med     = doc.custom_medical_allowance_monthly or 0 %}
+  {% set special = doc.custom_special_allowance_monthly or 0 %}
   {% set gross_m = basic + hra + conv + med + special %}
-  {% set epf     = doc.custom_employee_pf or 0 %}
-  {% set eesi    = doc.custom_employee_esi or 0 %}
-  {% set pt      = doc.custom_professional_tax or 0 %}
+  {% set epf     = doc.custom_employee_pf_monthly or 0 %}
+  {% set eesi    = doc.custom_employee_esi_monthly or 0 %}
+  {% set pt      = doc.custom_professional_tax_monthly or 0 %}
   {% set ded_m   = epf + eesi + pt %}
   {% set net_m   = gross_m - ded_m %}
   {% set er_pf   = doc.custom_employer_pf or 0 %}
-  {% set er_ins  = doc.custom_employer_insurance or 0 %}
+  {% set er_ins  = doc.custom_employer_esiinsurance_monthly or 0 %}
   {% set er_ded  = er_pf + er_ins %}
   {% set med_ins = ((doc.custom_medical_insurance_annual_premium or 0) / 12) | round | int
-                   if (eesi == 0 and not doc.custom_medical_opted_out) else 0 %}
-  {% set ctc_ann = doc.custom_ctc or ((gross_m + er_ded + med_ins) * 12) %}
+                   if (eesi == 0 and not doc.custom_medical_insurance_opted_out) else 0 %}
+  {% set ctc_ann = doc.custom_annual_ctc or ((gross_m + er_ded + med_ins) * 12) %}
 
   <table class="sal">
     <tr>
@@ -359,7 +359,7 @@ This notice period is applicable in cases including but not limited to:</p>
     {% endif %}
     {% set med_annual = doc.custom_medical_insurance_annual_premium or 0 %}
     {% set med_monthly = (med_annual / 12) | round | int %}
-    {% if eesi == 0 and not doc.custom_medical_opted_out and med_annual > 0 %}
+    {% if eesi == 0 and not doc.custom_medical_insurance_opted_out and med_annual > 0 %}
     <tr><td>Medical Insurance (Employer)</td>
         <td class="r">{{ "{:,.0f}".format(med_monthly) }}</td>
         <td class="r">{{ "{:,.0f}".format(med_annual) }}</td></tr>

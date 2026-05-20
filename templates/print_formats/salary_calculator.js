@@ -27,13 +27,13 @@
 
 frappe.ui.form.on('Job Offer', {
 
-    custom_ctc: function(frm) {
+    custom_annual_ctc: function(frm) {
         calculate_salary(frm);
     },
     custom_pf_opted_out: function(frm) {
         calculate_salary(frm);
     },
-    custom_medical_opted_out: function(frm) {
+    custom_medical_insurance_opted_out: function(frm) {
         calculate_salary(frm);
     },
     custom_medical_insurance_annual_premium: function(frm) {
@@ -50,19 +50,19 @@ frappe.ui.form.on('Job Offer', {
             frm.set_value('custom_medical_insurance_annual_premium', 10000);
         }
         // Apply field visibility based on current values
-        _update_visibility(frm, frm.doc.custom_employee_esi > 0, frm.doc.custom_basic || 0);
+        _update_visibility(frm, frm.doc.custom_employee_esi_monthly > 0, frm.doc.custom_basic_monthly || 0);
     }
 
 });
 
 
 function calculate_salary(frm) {
-    const annual_ctc = frm.doc.custom_ctc || 0;
+    const annual_ctc = frm.doc.custom_annual_ctc || 0;
     if (!annual_ctc || annual_ctc <= 0) return;
 
     const monthly_ctc        = annual_ctc / 12;
     const pf_opted_out       = frm.doc.custom_pf_opted_out ? true : false;
-    const medical_opted_out  = frm.doc.custom_medical_opted_out ? true : false;
+    const medical_opted_out  = frm.doc.custom_medical_insurance_opted_out ? true : false;
     const medical_annual     = frm.doc.custom_medical_insurance_annual_premium || 10000;
     const medical_monthly    = Math.round(medical_annual / 12);
 
@@ -144,16 +144,16 @@ function calculate_salary(frm) {
     }
 
     // ── Set all salary fields ─────────────────────────────────────────────────
-    frm.set_value('custom_basic',              basic);
-    frm.set_value('custom_hra',                hra);
-    frm.set_value('custom_conveyance',         conv);
-    frm.set_value('custom_medical_allowance',  medical_all);
-    frm.set_value('custom_special_allowance',  special);
-    frm.set_value('custom_employee_pf',        emp_pf);
-    frm.set_value('custom_employee_esi',       emp_esi);
-    frm.set_value('custom_professional_tax',   pt);
+    frm.set_value('custom_basic_monthly',              basic);
+    frm.set_value('custom_hra_monthly',                hra);
+    frm.set_value('custom_conveyance_allowance_monthly',         conv);
+    frm.set_value('custom_medical_allowance_monthly',  medical_all);
+    frm.set_value('custom_special_allowance_monthly',  special);
+    frm.set_value('custom_employee_pf_monthly',        emp_pf);
+    frm.set_value('custom_employee_esi_monthly',       emp_esi);
+    frm.set_value('custom_professional_tax_monthly',   pt);
     frm.set_value('custom_employer_pf',        er_pf_final);
-    frm.set_value('custom_employer_insurance', er_esi_final);
+    frm.set_value('custom_employer_esiinsurance_monthly', er_esi_final);
 
     // ── Summary alert ─────────────────────────────────────────────────────────
     const fmt = n => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -172,12 +172,12 @@ function _update_visibility(frm, esi_applies, gross) {
 
     // Medical opt-out + premium: show only when ESI does NOT apply
     const show_med = !esi_applies;
-    frm.set_df_property('custom_medical_opted_out',       'hidden', show_med ? 0 : 1);
+    frm.set_df_property('custom_medical_insurance_opted_out',       'hidden', show_med ? 0 : 1);
     frm.set_df_property('custom_medical_insurance_annual_premium','hidden', show_med ? 0 : 1);
 
     frm.refresh_fields([
         'custom_pf_opted_out',
-        'custom_medical_opted_out',
+        'custom_medical_insurance_opted_out',
         'custom_medical_insurance_annual_premium'
     ]);
 }
