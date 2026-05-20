@@ -35,13 +35,42 @@ def send_offer_letter(offer_name: str) -> None:
         doc = frappe.get_doc("Job Offer", offer_name)
         settings = frappe.get_single("greytHR Settings")
 
-        signatory = frappe.get_doc("User", settings.default_signatory)
-        applicant_email = _get_applicant_email(doc)
-
-        offer_docx = _generate_document(doc)
-        if not offer_docx:
+        # ── Pre-flight checks (fail-fast with clear messages) ────────────────
+        if not settings.default_signatory:
+            log_error(
+                f"send_offer_letter: {offer_name} aborted — "
+                f"greytHR Settings → Default Signatory is not configured. "
+                f"Set it to a User (e.g. HR head) and resubmit.",
+                "greytHR Offer Letter Config Error",
+            )
             return
 
+        applicant_email = _get_applicant_email(doc)
+        if not applicant_email:
+            log_error(
+                f"send_offer_letter: {offer_name} aborted — "
+                f"candidate email is empty. Set email_id on Job Applicant "
+                f"{doc.applicant} and resubmit.",
+                "greytHR Offer Letter Config Error",
+            )
+            return
+
+        signatory = frappe.get_doc("User", settings.default_signatory)
+        if not signatory.full_name or not signatory.email:
+            log_error(
+                f"send_offer_letter: {offer_name} aborted — "
+                f"default signatory User {settings.default_signatory} is missing "
+                f"full_name or email.",
+                "greytHR Offer Letter Config Error",
+            )
+            return
+
+        # ── Generate document ────────────────────────────────────────────────
+        offer_docx = _generate_document(doc)
+        if not offer_docx:
+            return  # _generate_document already logged
+
+        # ── Send to Zoho Sign ────────────────────────────────────────────────
         signers = [
             {"name": signatory.full_name, "email": signatory.email, "order": 1},
             {"name": doc.applicant_name, "email": applicant_email, "order": 2},
@@ -68,6 +97,29 @@ def send_offer_letter(offer_name: str) -> None:
             f"send_offer_letter: {offer_name} error={str(exc)[:200]}",
             "greytHR Offer Letter Send Error",
         )
+
+
+@frappe.whitelist()
+def force_resend_offer(offer_name: str) -> dict:
+    """
+    Manually trigger send_offer_letter for an already-submitted Job Offer.
+
+    Useful for retrying after a configuration fix (e.g., Default Signatory
+    was empty when the offer was first submitted). Only System Managers
+    can call this — Frappe enforces via @frappe.whitelist() + role checks.
+
+    Call from any logged-in browser session:
+        https://<site>/api/method/greythr_bridge.hooks_handlers.job_offer.force_resend_offer?offer_name=HR-OFF-2026-00003
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Only System Manager can force-resend offers.")
+
+    frappe.enqueue(
+        "greythr_bridge.hooks_handlers.job_offer.send_offer_letter",
+        queue="short",
+        offer_name=offer_name,
+    )
+    return {"status": "enqueued", "offer_name": offer_name}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
