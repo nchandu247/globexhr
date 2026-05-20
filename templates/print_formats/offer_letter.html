@@ -285,7 +285,7 @@ This notice period is applicable in cases including but not limited to:</p>
   {% set er_pf   = doc.custom_employer_pf or 0 %}
   {% set er_ins  = doc.custom_employer_insurance or 0 %}
   {% set er_ded  = er_pf + er_ins %}
-  {% set med_ins = ((doc.custom_medical_insurance_annual or 0) / 12) | round | int
+  {% set med_ins = ((doc.custom_medical_insurance_annual_premium or 0) / 12) | round | int
                    if (eesi == 0 and not doc.custom_medical_opted_out) else 0 %}
   {% set ctc_ann = doc.custom_ctc or ((gross_m + er_ded + med_ins) * 12) %}
 
@@ -357,7 +357,7 @@ This notice period is applicable in cases including but not limited to:</p>
         <td class="r">{{ "{:,.0f}".format(er_ins) }}</td>
         <td class="r">{{ "{:,.0f}".format(er_ins * 12) }}</td></tr>
     {% endif %}
-    {% set med_annual = doc.custom_medical_insurance_annual or 0 %}
+    {% set med_annual = doc.custom_medical_insurance_annual_premium or 0 %}
     {% set med_monthly = (med_annual / 12) | round | int %}
     {% if eesi == 0 and not doc.custom_medical_opted_out and med_annual > 0 %}
     <tr><td>Medical Insurance (Employer)</td>

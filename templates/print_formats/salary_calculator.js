@@ -36,7 +36,7 @@ frappe.ui.form.on('Job Offer', {
     custom_medical_opted_out: function(frm) {
         calculate_salary(frm);
     },
-    custom_medical_insurance_annual: function(frm) {
+    custom_medical_insurance_annual_premium: function(frm) {
         calculate_salary(frm);
     },
 
@@ -46,8 +46,8 @@ frappe.ui.form.on('Job Offer', {
         }, 'Salary');
 
         // Set default medical premium if blank
-        if (!frm.doc.custom_medical_insurance_annual) {
-            frm.set_value('custom_medical_insurance_annual', 10000);
+        if (!frm.doc.custom_medical_insurance_annual_premium) {
+            frm.set_value('custom_medical_insurance_annual_premium', 10000);
         }
         // Apply field visibility based on current values
         _update_visibility(frm, frm.doc.custom_employee_esi > 0, frm.doc.custom_basic || 0);
@@ -63,7 +63,7 @@ function calculate_salary(frm) {
     const monthly_ctc        = annual_ctc / 12;
     const pf_opted_out       = frm.doc.custom_pf_opted_out ? true : false;
     const medical_opted_out  = frm.doc.custom_medical_opted_out ? true : false;
-    const medical_annual     = frm.doc.custom_medical_insurance_annual || 10000;
+    const medical_annual     = frm.doc.custom_medical_insurance_annual_premium || 10000;
     const medical_monthly    = Math.round(medical_annual / 12);
 
     // ── Iterative convergence ─────────────────────────────────────────────────
@@ -173,11 +173,11 @@ function _update_visibility(frm, esi_applies, gross) {
     // Medical opt-out + premium: show only when ESI does NOT apply
     const show_med = !esi_applies;
     frm.set_df_property('custom_medical_opted_out',       'hidden', show_med ? 0 : 1);
-    frm.set_df_property('custom_medical_insurance_annual','hidden', show_med ? 0 : 1);
+    frm.set_df_property('custom_medical_insurance_annual_premium','hidden', show_med ? 0 : 1);
 
     frm.refresh_fields([
         'custom_pf_opted_out',
         'custom_medical_opted_out',
-        'custom_medical_insurance_annual'
+        'custom_medical_insurance_annual_premium'
     ]);
 }
