@@ -1,4 +1,4 @@
+# Dev / test dependencies only.
+# Runtime deps live in pyproject.toml — Frappe Cloud installs from there.
 responses
 pytest
-ratelimit
-docxtpl
