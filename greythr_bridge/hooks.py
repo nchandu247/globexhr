@@ -6,12 +6,19 @@ app_email = "hr@globexdigital.ai"
 app_license = "Proprietary"
 required_apps = ["frappe/hrms"]  # does not require ERPNext
 
-# Fixtures auto-loaded on install
+# Fixtures auto-loaded on install / migrate
 fixtures = [
     {
         "dt": "DocType",
         "filters": [["module", "=", "greytHR"]],
-    }
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "in", ["Job Offer", "Employee", "Salary Structure Assignment"]],
+            ["fieldname", "like", "custom_%"],
+        ],
+    },
 ]
 
 # Scheduled jobs

@@ -7,3 +7,15 @@ __pycache__/
 dist/
 .pytest_cache/
 *.log
+
+# Secrets — NEVER commit
+keys.txt
+*.key
+*.pem
+credentials.json
+
+# Local Claude Code config
+.claude/
+
+# Word/Office temp lock files
+~$*

@@ -162,5 +162,56 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   Account ID stored in greytHR Settings. Access Token auto-cached on first API call.
 - ✅ 59 tests passing.
 - ⬜ **Task 5.6:** "Resend Signing Request" button on Job Offer form. Deferred (UI task).
-- ⬜ **End-to-end test:** Blocked until Phase 4 (letter templates) is complete —
-  _generate_pdf() requires Print Format records to exist.
+- ✅ **Task 5.6 (unblocked):** `_generate_pdf()` now uses python-docx mail merge
+  (see Phase 4 below) — no longer blocked on Frappe Print Formats.
+
+## Phase 5 — COMPLETE (5.6 UI button deferred)
+
+---
+
+## [Unreleased] — Phase 4
+
+### Phase 4 — Letter Templates (python-docx mail merge approach)
+
+- ✅ **Architecture decision:** Replaced Frappe HTML/Jinja Print Formats with
+  `docxtpl` (Jinja2 inside DOCX) + LibreOffice headless PDF conversion.
+  Rationale: original DOCX templates already exist and are HR-approved;
+  recreating them pixel-perfectly in HTML/CSS was not feasible.
+- ✅ `greythr_bridge/letters/__init__.py` — module root.
+- ✅ `greythr_bridge/letters/merger.py` — `merge_to_pdf(template, context)` and
+  `build_offer_context(doc)` with full salary field mapping, INR formatting,
+  ESI/PF/medical conditional logic.
+- ✅ `greythr_bridge/letters/pdf_convert.py` — `docx_to_pdf_bytes()` via
+  LibreOffice headless subprocess (60s timeout, temp dir cleanup).
+- ✅ `greythr_bridge/hooks_handlers/job_offer.py` updated — `_generate_pdf(doc)`
+  now calls `merge_to_pdf("offer_letter.docx", build_offer_context(doc))`.
+- ✅ `greythr_bridge/templates/letters/PLACEHOLDERS.md` — guide for HR to add
+  `{{ variable }}` placeholders to their Word templates.
+- ✅ `docxtpl` added to `requirements.txt`.
+- ✅ 7 new tests in `tests/test_letters.py` — all passing offline.
+- ✅ **Context builder extended** to match actual HR template placeholders
+  (analyzed from `Globex Digital Solutions _ Template _ Offer Letter.pdf`):
+  - All numeric values now bare (no `₹` prefix), Indian comma format (`6,00,000`)
+  - Added annual versions of every salary component (`*_annual` keys)
+  - Added totals: `total_deductions_monthly/annual`, `employer_deductions_annual`
+  - Added `band`, `current_date`, `gross_annual`, `net_take_home_annual`
+  - Added 10 candidate-detail / offer-term keys: `candidate_email`, `candidate_mobile`,
+    `candidate_address`, `work_location`, `reporting_to`, `probation_period`,
+    `notice_period`, `joining_bonus`, `variable_pay_annual`, `acceptance_deadline`
+- ✅ `fixtures/custom_field.json` — 8 new Job Offer custom fields auto-installed
+  on `bench migrate`: `custom_band`, `custom_work_location`, `custom_reporting_to`
+  (Link → Employee), `custom_probation_period`, `custom_notice_period`,
+  `custom_joining_bonus` (Currency), `custom_variable_pay_annual` (Currency),
+  `custom_acceptance_deadline` (Date). Defaults: Hyderabad / 6 months / 60 days.
+- ✅ `hooks.py` fixtures extended to include `Custom Field` for Job Offer,
+  Employee, and Salary Structure Assignment.
+- ✅ Test suite expanded to 15 tests (was 7) — all passing offline.
+- ✅ **`scripts/build_offer_template.py`** — one-shot DOCX rewriter. Reads the
+  HR-approved `templates/Globex Digital Solutions _ Template _ Offer Letter.docx`,
+  applies 21 `«…»` → `{{ }}` substitutions + fixes `{{ candidate_name }` typo,
+  saves to `greythr_bridge/templates/letters/offer_letter.docx`. Preserves
+  fonts, logo, tables, page layout.
+- ✅ **`offer_letter.docx` built** — 65 placeholders / 36 unique variables.
+  Smoke-tested: docxtpl renders cleanly, all sample values appear in output.
+- ⬜ **End-to-end test on live site:** Submit a Job Offer → PDF generates
+  via LibreOffice headless → sent to Zoho Sign.

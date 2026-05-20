@@ -1,0 +1,82 @@
+[
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_band",
+  "label": "Band",
+  "fieldtype": "Data",
+  "insert_after": "designation",
+  "module": "greytHR",
+  "description": "Salary band / level (e.g. B3, L5). Used in offer letter Annexure A."
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_work_location",
+  "label": "Work Location",
+  "fieldtype": "Data",
+  "default": "Hyderabad",
+  "insert_after": "custom_band",
+  "module": "greytHR"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_reporting_to",
+  "label": "Reporting To",
+  "fieldtype": "Link",
+  "options": "Employee",
+  "insert_after": "custom_work_location",
+  "module": "greytHR"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_probation_period",
+  "label": "Probation Period",
+  "fieldtype": "Data",
+  "default": "6 months",
+  "insert_after": "custom_reporting_to",
+  "module": "greytHR"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_notice_period",
+  "label": "Notice Period",
+  "fieldtype": "Data",
+  "default": "60 days",
+  "insert_after": "custom_probation_period",
+  "module": "greytHR"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_joining_bonus",
+  "label": "Joining Bonus",
+  "fieldtype": "Currency",
+  "insert_after": "custom_notice_period",
+  "module": "greytHR",
+  "description": "One-time bonus payable with first salary. Leave blank if not applicable."
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_variable_pay_annual",
+  "label": "Variable Pay (Annual)",
+  "fieldtype": "Currency",
+  "insert_after": "custom_joining_bonus",
+  "module": "greytHR",
+  "description": "Performance-linked annual variable pay. Leave blank if not applicable."
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "Job Offer",
+  "fieldname": "custom_acceptance_deadline",
+  "label": "Acceptance Deadline",
+  "fieldtype": "Date",
+  "insert_after": "custom_variable_pay_annual",
+  "module": "greytHR",
+  "description": "Last date by which candidate must accept the offer."
+ }
+]
