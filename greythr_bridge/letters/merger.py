@@ -23,14 +23,8 @@ _TEMPLATE_DIR = os.path.normpath(
 )
 
 
-def merge_to_pdf(template_filename: str, context: dict) -> bytes:
-    """
-    Fill *template_filename* (inside templates/letters/) with *context*
-    and return PDF bytes.
-
-    Raises frappe.ValidationError if the template file is missing.
-    Raises RuntimeError if LibreOffice conversion fails.
-    """
+def _render_template(template_filename: str, context: dict) -> DocxTemplate:
+    """Internal: load template, render with context, return the DocxTemplate."""
     template_path = os.path.join(_TEMPLATE_DIR, template_filename)
     if not os.path.exists(template_path):
         frappe.throw(
@@ -41,10 +35,49 @@ def merge_to_pdf(template_filename: str, context: dict) -> bytes:
 
     tpl = DocxTemplate(template_path)
     tpl.render(context)
+    return tpl
 
+
+def merge_to_docx(template_filename: str, context: dict) -> bytes:
+    """
+    Fill *template_filename* (inside templates/letters/) with *context*
+    and return DOCX bytes.
+
+    Preferred over merge_to_pdf() because Zoho Sign accepts .docx uploads
+    natively and converts to PDF server-side. No LibreOffice dependency.
+
+    Raises frappe.ValidationError if the template file is missing.
+    """
+    tpl = _render_template(template_filename, context)
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp_path = tmp.name
+    try:
+        tpl.save(tmp_path)
+        with open(tmp_path, "rb") as f:
+            return f.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
+
+def merge_to_pdf(template_filename: str, context: dict) -> bytes:
+    """
+    Fill *template_filename* with *context* and return PDF bytes.
+
+    Requires LibreOffice headless on the host. Frappe Cloud does NOT include
+    LibreOffice in its standard image — use merge_to_docx() instead and let
+    Zoho Sign handle the PDF conversion.
+
+    Kept available as a fallback / for environments where LibreOffice exists.
+
+    Raises frappe.ValidationError if template missing.
+    Raises RuntimeError if LibreOffice conversion fails.
+    """
+    tpl = _render_template(template_filename, context)
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        tmp_path = tmp.name
     try:
         tpl.save(tmp_path)
         return docx_to_pdf_bytes(tmp_path)

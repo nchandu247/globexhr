@@ -96,12 +96,58 @@ def test_send_for_signature_returns_request_id(patch_frappe, settings):
     )
 
     result = send_for_signature(
-        pdf_bytes=b"%PDF-1.4 test",
+        file_bytes=b"%PDF-1.4 test",
         document_name="NDA - Test Candidate",
         signers=_signers(),
         metadata=_metadata(),
     )
     assert result == "REQ-001"
+
+
+@rsps_lib.activate
+def test_send_for_signature_accepts_docx(patch_frappe, settings):
+    """DOCX uploads should work — preferred path (no LibreOffice needed)."""
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
+
+    _add_token_mock()
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests",
+        json={"requests": {"request_id": "REQ-DOCX-001"}},
+        status=200,
+    )
+
+    result = send_for_signature(
+        file_bytes=b"PK\x03\x04 fake docx",
+        document_name="Offer Letter - Test Candidate",
+        signers=_signers(),
+        metadata=_metadata(),
+        file_extension="docx",
+    )
+    assert result == "REQ-DOCX-001"
+
+
+@rsps_lib.activate
+def test_send_for_signature_rejects_unknown_extension(patch_frappe, settings):
+    """Unknown file_extension should raise before hitting Zoho."""
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
+    _add_token_mock()
+
+    from greythr_bridge.api.exceptions import ZohoSignError
+    with pytest.raises(ZohoSignError, match="Unsupported file_extension"):
+        send_for_signature(
+            file_bytes=b"data",
+            document_name="X",
+            signers=_signers(),
+            metadata=_metadata(),
+            file_extension="xyz",
+        )
 
 
 @rsps_lib.activate

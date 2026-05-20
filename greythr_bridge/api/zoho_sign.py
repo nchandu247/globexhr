@@ -95,33 +95,56 @@ def _headers() -> dict:
 
 # ── public API ────────────────────────────────────────────────────────────────
 
+_MIME_BY_EXT = {
+    "pdf":  "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc":  "application/msword",
+    "rtf":  "application/rtf",
+}
+
+
 def send_for_signature(
-    pdf_bytes: bytes,
+    file_bytes: bytes,
     document_name: str,
     signers: list[dict],
     metadata: dict,
     expiry_days: int = 30,
+    file_extension: str = "pdf",
 ) -> str:
     """
-    Upload a PDF to Zoho Sign and create a signing request.
+    Upload a document to Zoho Sign and create a signing request.
+
+    Zoho Sign accepts PDF, DOCX, DOC, RTF, JPG, PNG. For DOCX uploads,
+    Zoho converts to PDF server-side — preferred because we don't need
+    LibreOffice on the bench.
 
     Args:
-        pdf_bytes:     Raw PDF file content.
-        document_name: Human-readable title for the document in Zoho Sign.
-        signers:       [{"name": ..., "email": ..., "order": 1}, ...]
-                       order=1 signs first (company signatory), order=2 signs after (candidate).
-                       Signing is sequential (is_sequential=True).
-        metadata:      Dict stored as the document description; passed back verbatim
-                       in the webhook payload so we can route the callback correctly.
-                       Should include: {"doctype": ..., "docname": ..., "letter_type": ...}
-        expiry_days:   Signing link TTL in days (default 30).
+        file_bytes:     Raw file content.
+        document_name:  Human-readable title for the document in Zoho Sign.
+        signers:        [{"name": ..., "email": ..., "order": 1}, ...]
+                        order=1 signs first (company signatory),
+                        order=2 signs after (candidate). Sequential.
+        metadata:       Dict stored as document description; round-tripped
+                        verbatim in the webhook payload so we can route
+                        the callback. Include: {doctype, docname, letter_type}.
+        expiry_days:    Signing link TTL in days (default 30).
+        file_extension: "pdf" | "docx" | "doc" | "rtf" — controls upload
+                        filename + MIME type (default "pdf").
 
     Returns:
-        request_id (str) — store in custom_zoho_sign_*_request_id on the Job Offer.
+        request_id (str) — store on the Job Offer.
 
     Raises:
         ZohoSignError on any non-2xx response or missing request_id.
     """
+    ext = file_extension.lower().lstrip(".")
+    mime_type = _MIME_BY_EXT.get(ext)
+    if not mime_type:
+        raise ZohoSignError(
+            f"Unsupported file_extension '{file_extension}'. "
+            f"Supported: {sorted(_MIME_BY_EXT.keys())}"
+        )
+
     actions = [
         {
             "action_type": "SIGN",
@@ -146,7 +169,7 @@ def send_for_signature(
     resp = requests.post(
         f"{_BASE}/requests",
         headers=_headers(),
-        files={"file": (f"{document_name}.pdf", pdf_bytes, "application/pdf")},
+        files={"file": (f"{document_name}.{ext}", file_bytes, mime_type)},
         data={"data": json.dumps(request_data)},
         timeout=30,
     )

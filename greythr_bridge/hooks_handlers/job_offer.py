@@ -6,7 +6,7 @@ All real work is enqueued — handlers must return within 5 seconds.
 """
 import frappe
 from ..api.zoho_sign import send_for_signature
-from ..letters.merger import build_offer_context, merge_to_pdf
+from ..letters.merger import build_offer_context, merge_to_docx
 from ..utils.logging import log_error
 
 
@@ -28,8 +28,8 @@ def on_offer_submitted(doc, method):
 
 def send_offer_letter(offer_name: str) -> None:
     """
-    Generate the Offer Letter PDF from the DOCX template and send to Zoho Sign.
-    Enqueued by on_offer_submitted.
+    Generate the Offer Letter DOCX from the template and send to Zoho Sign.
+    Zoho Sign converts to PDF server-side. Enqueued by on_offer_submitted.
     """
     try:
         doc = frappe.get_doc("Job Offer", offer_name)
@@ -38,8 +38,8 @@ def send_offer_letter(offer_name: str) -> None:
         signatory = frappe.get_doc("User", settings.default_signatory)
         applicant_email = _get_applicant_email(doc)
 
-        offer_pdf = _generate_pdf(doc)
-        if not offer_pdf:
+        offer_docx = _generate_document(doc)
+        if not offer_docx:
             return
 
         signers = [
@@ -48,7 +48,7 @@ def send_offer_letter(offer_name: str) -> None:
         ]
 
         request_id = send_for_signature(
-            pdf_bytes=offer_pdf,
+            file_bytes=offer_docx,
             document_name=f"Offer Letter - {doc.applicant_name}",
             signers=signers,
             metadata={
@@ -56,6 +56,7 @@ def send_offer_letter(offer_name: str) -> None:
                 "docname": offer_name,
                 "letter_type": "offer_letter",
             },
+            file_extension="docx",
         )
 
         frappe.db.set_value(
@@ -82,14 +83,14 @@ def _get_applicant_email(offer_doc) -> str | None:
     return None
 
 
-def _generate_pdf(doc) -> bytes | None:
-    """Merge the DOCX template with Job Offer data and return PDF bytes."""
+def _generate_document(doc) -> bytes | None:
+    """Merge the DOCX template with Job Offer data and return DOCX bytes."""
     try:
         context = build_offer_context(doc)
-        return merge_to_pdf("offer_letter.docx", context)
+        return merge_to_docx("offer_letter.docx", context)
     except Exception as exc:
         log_error(
-            f"_generate_pdf: doc={doc.name} error={str(exc)[:200]}",
-            "greytHR PDF Generation Error",
+            f"_generate_document: doc={doc.name} error={str(exc)[:200]}",
+            "greytHR Letter Generation Error",
         )
         return None
