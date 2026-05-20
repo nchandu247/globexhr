@@ -49,8 +49,9 @@ def send_offer_letter(offer_name: str) -> None:
         if not applicant_email:
             log_error(
                 f"send_offer_letter: {offer_name} aborted — "
-                f"candidate email is empty. Set email_id on Job Applicant "
-                f"{doc.applicant} and resubmit.",
+                f"candidate email is empty. Set Applicant Email on Job Offer "
+                f"or email_id on Job Applicant "
+                f"{getattr(doc, 'job_applicant', '?')} and resubmit.",
                 "greytHR Offer Letter Config Error",
             )
             return
@@ -125,10 +126,17 @@ def force_resend_offer(offer_name: str) -> dict:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _get_applicant_email(offer_doc) -> str | None:
-    """Get candidate email from the linked Job Applicant."""
+    """
+    Get candidate email. Prefers Job Offer's own `applicant_email` field
+    (it's right there — no extra lookup), falls back to Job Applicant.email_id.
+    """
+    direct = getattr(offer_doc, "applicant_email", None)
+    if direct:
+        return direct
     try:
-        if offer_doc.applicant:
-            applicant = frappe.get_doc("Job Applicant", offer_doc.applicant)
+        job_applicant = getattr(offer_doc, "job_applicant", None)
+        if job_applicant:
+            applicant = frappe.get_doc("Job Applicant", job_applicant)
             return applicant.email_id
     except Exception:
         pass

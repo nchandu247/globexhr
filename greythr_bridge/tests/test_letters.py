@@ -34,7 +34,8 @@ class FakeDoc:
     designation = "Software Engineer"
     department = "Engineering"
     offer_date = "2025-06-01"
-    applicant = None
+    job_applicant = None
+    applicant_email = "test.candidate@example.com"
     custom_date_of_joining = "2025-06-16"
     custom_annual_ctc = 600000
     custom_basic_monthly = 21600      # 50% of ~43200 gross
@@ -158,6 +159,40 @@ class TestBuildOfferContext(unittest.TestCase):
         self.assertFalse(self.ctx["has_variable_pay"])
         self.assertEqual(self.ctx["variable_pay_annual"], "0")
 
+    def test_candidate_email_read_directly_from_job_offer(self):
+        """Email should come from doc.applicant_email — no Job Applicant fetch needed."""
+        self.assertEqual(self.ctx["candidate_email"], "test.candidate@example.com")
+
+    def test_no_attribute_error_when_optional_fields_missing(self):
+        """
+        Regression test for 'JobOffer object has no attribute applicant'.
+        Doc with no candidate-link / no opt-out flags should still produce
+        a full context, not raise.
+        """
+        class MinimalDoc:
+            name = "OFR-MIN"
+            applicant_name = "Min Candidate"
+            designation = "Eng"
+            offer_date = "2025-06-01"
+            custom_annual_ctc = 600000
+            custom_basic_monthly = 21600
+            custom_hra_monthly = 10800
+            custom_conveyance_allowance_monthly = 1600
+            custom_medical_allowance_monthly = 1250
+            custom_special_allowance_monthly = 7950
+            custom_employee_pf_monthly = 1800
+            custom_employee_esi_monthly = 0
+            custom_professional_tax_monthly = 200
+            custom_employer_pf = 1950
+            custom_employer_esiinsurance_monthly = 0
+            # NO job_applicant, applicant_email, department, opt-out flags
+
+        ctx = build_offer_context(MinimalDoc())
+        self.assertEqual(ctx["candidate_email"], "")
+        self.assertEqual(ctx["department"], "")
+        self.assertFalse(ctx["pf_opted_out"])
+        self.assertFalse(ctx["medical_opted_out"])
+
     def test_defaults_when_custom_fields_missing(self):
         """When optional custom fields aren't on the doc at all, defaults apply."""
         class BareDoc:
@@ -166,7 +201,8 @@ class TestBuildOfferContext(unittest.TestCase):
             designation = "Engineer"
             department = ""
             offer_date = "2025-06-01"
-            applicant = None
+            job_applicant = None
+            applicant_email = ""
             custom_annual_ctc = 600000
             custom_basic_monthly = 21600
             custom_hra_monthly = 10800

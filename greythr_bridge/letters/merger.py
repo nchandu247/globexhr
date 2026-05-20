@@ -147,8 +147,8 @@ def build_offer_context(doc) -> dict:
 
     # Medical insurance line for Annexure — shown only when ESI doesn't apply
     med_ins_monthly = 0
-    if not esi_applies and not doc.custom_medical_insurance_opted_out:
-        annual_prem = doc.custom_medical_insurance_annual_premium or 10000
+    if not esi_applies and not getattr(doc, "custom_medical_insurance_opted_out", False):
+        annual_prem = getattr(doc, "custom_medical_insurance_annual_premium", None) or 10000
         med_ins_monthly = round(annual_prem / 12)
 
     # ── Optional offer terms (custom fields on Job Offer) ─────────────────────
@@ -182,23 +182,27 @@ def build_offer_context(doc) -> dict:
         except Exception:
             pass
 
-    # ── Candidate contact details from linked Job Applicant ───────────────────
-    candidate_email   = ""
+    # ── Candidate contact details ─────────────────────────────────────────────
+    # Email: prefer Job Offer's own applicant_email field (it's right there);
+    # phone & address: still need to fetch the Job Applicant doc.
+    candidate_email   = getattr(doc, "applicant_email", None) or ""
     candidate_mobile  = ""
     candidate_address = ""
-    if doc.applicant:
-        try:
+    try:
+        job_applicant = getattr(doc, "job_applicant", None)
+        if job_applicant:
             import frappe
-            applicant = frappe.get_doc("Job Applicant", doc.applicant)
-            candidate_email   = applicant.email_id or ""
+            applicant = frappe.get_doc("Job Applicant", job_applicant)
+            if not candidate_email:
+                candidate_email = applicant.email_id or ""
             candidate_mobile  = (getattr(applicant, "phone_number", None)
                                  or getattr(applicant, "cell_number", None)
                                  or "")
             candidate_address = (getattr(applicant, "custom_address", None)
                                  or getattr(applicant, "country", None)
                                  or "")
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     return {
         # ── Header / addressing ────────────────────────────────────────────────
@@ -209,7 +213,7 @@ def build_offer_context(doc) -> dict:
         "candidate_mobile":    candidate_mobile,
         "candidate_address":   candidate_address,
         "designation":         doc.designation or "",
-        "department":          doc.department or "",
+        "department":          getattr(doc, "department", None) or "",
         "date_of_joining":     fmt_date(getattr(doc, "custom_date_of_joining", None)),
         "acceptance_deadline": fmt_date(acceptance_deadline_v),
 
@@ -264,8 +268,8 @@ def build_offer_context(doc) -> dict:
 
         # ── Conditional flags (for {% if %} blocks in template) ────────────────
         "esi_applies":        esi_applies,
-        "pf_opted_out":       bool(doc.custom_pf_opted_out),
-        "medical_opted_out":  bool(doc.custom_medical_insurance_opted_out),
+        "pf_opted_out":       bool(getattr(doc, "custom_pf_opted_out", False)),
+        "medical_opted_out":  bool(getattr(doc, "custom_medical_insurance_opted_out", False)),
         "has_joining_bonus":  bool(joining_bonus_raw and float(joining_bonus_raw) > 0),
         "has_variable_pay":   bool(variable_pay_raw and float(variable_pay_raw) > 0),
 
