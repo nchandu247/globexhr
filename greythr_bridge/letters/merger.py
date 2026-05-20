@@ -321,3 +321,81 @@ def test_merge_to_pdf():
     with open(out_path, "wb") as f:
         f.write(pdf_bytes)
     print(f"OK: PDF generated ({len(pdf_bytes):,} bytes) → {out_path}")
+
+
+@frappe.whitelist()
+def health_check() -> dict:
+    """
+    HTTP-callable health check for the letter pipeline.
+
+    Verifies: docxtpl import, template file present, LibreOffice availability,
+    and full DOCX→PDF conversion with sample data.
+
+    Call from any logged-in browser:
+        https://<site>/api/method/greythr_bridge.letters.merger.health_check
+
+    Returns a JSON object with one boolean per check + diagnostic details.
+    """
+    import subprocess
+
+    result = {
+        "docxtpl_installed": False,
+        "docxtpl_version": None,
+        "template_exists": False,
+        "template_path": "",
+        "libreoffice_path": None,
+        "libreoffice_version": None,
+        "merge_only_ok": False,
+        "merge_to_pdf_ok": False,
+        "pdf_bytes": 0,
+        "errors": [],
+    }
+
+    # 1. docxtpl
+    try:
+        import docxtpl
+        result["docxtpl_installed"] = True
+        result["docxtpl_version"] = docxtpl.__version__
+    except Exception as exc:
+        result["errors"].append(f"docxtpl import: {exc!r}")
+
+    # 2. Template file present
+    template_path = os.path.join(_TEMPLATE_DIR, "offer_letter.docx")
+    result["template_path"] = template_path
+    result["template_exists"] = os.path.exists(template_path)
+    if not result["template_exists"]:
+        result["errors"].append(f"template missing at {template_path}")
+
+    # 3. LibreOffice on PATH
+    try:
+        which = subprocess.run(["which", "libreoffice"], capture_output=True, text=True, timeout=5)
+        path = which.stdout.strip()
+        result["libreoffice_path"] = path or None
+        if path:
+            ver = subprocess.run(["libreoffice", "--version"], capture_output=True, text=True, timeout=10)
+            result["libreoffice_version"] = (ver.stdout or ver.stderr).strip()
+    except Exception as exc:
+        result["errors"].append(f"libreoffice check: {exc!r}")
+
+    # 4. DOCX merge only (no PDF)
+    if result["docxtpl_installed"] and result["template_exists"]:
+        try:
+            from docxtpl import DocxTemplate
+            tpl = DocxTemplate(template_path)
+            tpl.render(build_offer_context(_FakeOffer()))
+            with tempfile.NamedTemporaryFile(suffix=".docx", delete=True) as t:
+                tpl.save(t.name)
+            result["merge_only_ok"] = True
+        except Exception as exc:
+            result["errors"].append(f"merge_only: {exc!r}")
+
+    # 5. Full DOCX → PDF
+    if result["merge_only_ok"] and result["libreoffice_path"]:
+        try:
+            pdf = merge_to_pdf("offer_letter.docx", build_offer_context(_FakeOffer()))
+            result["merge_to_pdf_ok"] = True
+            result["pdf_bytes"] = len(pdf)
+        except Exception as exc:
+            result["errors"].append(f"merge_to_pdf: {exc!r}")
+
+    return result
