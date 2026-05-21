@@ -491,4 +491,11 @@ def health_check() -> dict:
         except Exception as exc:
             result["errors"].append(f"merge_to_pdf: {exc!r}")
 
+    # 6. WeasyPrint / libcairo pre-flight (Phase A migration)
+    try:
+        from .pdf_check import check_pdf_dependencies
+        result.update(check_pdf_dependencies())
+    except Exception as exc:
+        result["errors"].append(f"pdf_check: {exc!r}")
+
     return result

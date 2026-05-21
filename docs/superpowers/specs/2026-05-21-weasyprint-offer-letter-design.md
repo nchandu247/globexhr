@@ -223,7 +223,7 @@ body::before {
   inset: 0;
   background: url('img/globex-watermark.png') no-repeat center;
   background-size: 60%;
-  opacity: 0.06;
+  opacity: 0.08;
   z-index: -1;
 }
 ```
@@ -238,7 +238,7 @@ h2 { font-size: 13pt; font-weight: 600; margin-top: 8mm; }
 **Tables (Annexure A):**
 ```css
 table.salary-breakup { width: 100%; border-collapse: collapse; page-break-inside: avoid; }
-table.salary-breakup th { background: #0F2D52; color: white; padding: 2mm; text-align: left; }
+table.salary-breakup th { background: #01248A; color: white; padding: 2mm; text-align: left; }
 table.salary-breakup tr.total { background: #f0f0f0; font-weight: 600; }
 ```
 
@@ -386,7 +386,7 @@ A new Job Offer submitted on Frappe Cloud produces a Zoho-rendered signed PDF wh
 - ✅ `weasyprint_installed: true` and `libcairo_available: true` in `health_check` JSON
 - ✅ Modern font (Inter) renders correctly across all pages
 - ✅ Logo top-left on every page (controlled via CSS `@page`)
-- ✅ Watermark visible but at ≤10% opacity — readable text in front of it
+- ✅ Watermark visible but at 8% opacity — readable text in front of it
 - ✅ NO visible `{{S:R1*}}` `{{S:R2*}}` tags anywhere in PDF
 - ✅ Date of Joining appears in all 4 places (joining paragraph, Annexure Effective Date, Project Start Date, Acceptance)
 - ✅ Reporting Manager line appears when `custom_reporting_to` set, omitted otherwise
