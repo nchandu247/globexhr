@@ -30,6 +30,7 @@ Evidence taken from the actual signed PDF the candidate received:
 | 3 | "Hi .Vedanth Nalluri" weird dot | Page 1 salutation | 🟡 Medium |
 | 4 | Watermark too prominent | Pages 2, 3, 5 background | 🟡 Medium |
 | 5 | Awkward inline signature labels | "Globex Digital Solutions Pvt Ltd Employee Signature" on pages 2, 3 | 🟢 Low (HR template structural) |
+| 6 | Reporting Manager not shown anywhere | Field is captured (custom_reporting_to) but never appears in PDF | 🟡 Medium — important context for the candidate |
 
 ---
 
@@ -102,7 +103,7 @@ run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)  # white = invisible on white pa
 
 Zoho Sign parses text content, not font color — tags still detected, but invisible to humans in the rendered PDF.
 
-### 4.4 `scripts/build_offer_template.py` — text cleanups + watermark dim
+### 4.4 `scripts/build_offer_template.py` — text cleanups + watermark dim + Reporting Manager
 
 Add a second pass after existing `«…»` → `{{…}}` substitutions:
 
@@ -113,6 +114,13 @@ Find paragraph containing `"Hi .{{ candidate_name }}"` or `"Hi .{{candidate_name
 Walk every `section.header` and find shape elements with `text="Globex"` or similar watermark identifier. Set their transparency to 90% (alpha 25 in 0-255 range). Implementation uses `python-docx`'s low-level XML access (`element._element.xpath(...)`).
 
 If watermark XML manipulation proves too fragile (~30 min attempt cap), fall back to **leave watermark as-is** and note in CHANGELOG — non-blocking for the rest of the polish.
+
+**(c) Add Reporting Manager line:**
+Find paragraph containing `"ideally by {{ date_of_joining }}"` (the joining sentence on page 1). Insert a new paragraph immediately after it with the text:
+
+> `"You will report to {{ reporting_to }} in this role."`
+
+Wrapped in `{% if reporting_to %}` … `{% endif %}` jinja block so the sentence only appears when HR has set the reporting manager — gracefully degrades when field is empty.
 
 ### 4.5 No changes needed to
 
@@ -160,6 +168,8 @@ Three new tests added to existing suites:
 
 3. **`test_letters.py::test_offer_context_uses_date_of_joining`** — given a FakeDoc with DOJ set, verify `build_offer_context()` returns the formatted date in `date_of_joining` key.
 
+4. **`test_letters.py::test_build_script_injects_reporting_manager_line`** — call build script against a fixture DOCX containing the joining sentence; verify output contains the new "You will report to {{ reporting_to }}" paragraph wrapped in the jinja conditional.
+
 End-to-end smoke (local, manual): run merger against current `offer_letter.docx` with sample data; open the generated DOCX in Word; verify visually that:
 - DOJ appears in all 4 places
 - "Hi" salutation has no extra dot
@@ -175,8 +185,9 @@ A new Job Offer submitted with DOJ filled produces a Zoho-rendered signed PDF wh
 - ✅ Salutation reads "Hi Vedanth Nalluri," (no weird `.`)
 - ✅ `{{S:R1*}}` / `{{S:R2*}}` tags NOT visible (signature boxes still appear correctly when signing)
 - ✅ Watermark visible as subtle background, not interfering with text (OR left as-is with note if XML manipulation failed)
+- ✅ "You will report to [Manager Name] in this role." sentence appears on page 1 when `custom_reporting_to` is set; sentence is omitted entirely when field is empty
 - ✅ Submit blocked at form level if DOJ empty (clear error message)
-- ✅ All 82 existing tests still pass + 3 new tests pass
+- ✅ All 82 existing tests still pass + 4 new tests pass
 - ✅ Signed PDF retains both signatures in correct positions
 
 ---
@@ -200,7 +211,6 @@ To avoid scope creep:
 - Full template redesign
 - New content sections (e.g. variable pay, joining bonus paragraphs)
 - Other letter types (consultant, intern, increment, etc.)
-- Reporting Manager field display
 - Acceptance Deadline reminders
 - Multi-language support
 
