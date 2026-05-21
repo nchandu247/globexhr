@@ -1,0 +1,271 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Offer Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ offer_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ candidate_name }},</p>
+
+<div class="section">
+  <p>
+    We are delighted to extend our warmest congratulations on your successful application and
+    subsequent selection for the position of <strong>{{ designation }}</strong> at
+    Globex Digital Solutions Pvt Ltd (hereinafter referred to as &ldquo;GDS&rdquo;).
+    We believe that your expertise and skills will greatly contribute to our fast-paced and
+    dedicated team, as we strive to provide our clients with the highest level of service and advice.
+  </p>
+
+  <p>
+    Your initial place of posting will be in <strong>{{ work_location }}</strong>, where exciting
+    opportunities await you. We are eager for you to join us as early as possible, ideally by
+    <strong>{{ date_of_joining }}</strong>. Promptly joining GDS will ensure a smooth transition
+    into your new role and allow you to hit the ground running.
+  </p>
+
+  {% if reporting_to %}
+  <p class="reporting-mgr">
+    You will report to <strong>{{ reporting_to }}</strong> in this role.
+  </p>
+  {% endif %}
+
+  <p>
+    As a valued member of the GDS team, we want you to know that your dedication and contributions
+    are highly appreciated. We firmly believe in delivering outstanding quality and results that not
+    only meet but exceed our clients' expectations. Your commitment to excellence is crucial in
+    upholding our reputation as a trusted partner in delivering exceptional solutions. We trust you
+    to showcase your expertise, consistently providing products, actions, advice, and results that
+    reflect the highest standards of professionalism. We emphasize accountability in everything we
+    do. As a representative of GDS, we expect you to take ownership of your actions and outcomes.
+    By being accountable for your work, you contribute not only to the success of our organization
+    but also to your own growth as a professional.
+  </p>
+
+  <p>
+    In return for your commitment, we are fully committed to providing you with every opportunity
+    to learn, grow, and reach your highest potential. We offer a supportive environment that
+    encourages continuous professional development through training programmes, mentorship
+    opportunities, and access to cutting-edge resources.
+  </p>
+
+  <p>
+    This offer is time-sensitive. It is valid for seven days from the date of issue or until the
+    date of joining, whichever comes earlier. We kindly request that you carefully review this
+    offer and provide your acceptance within the specified time frame. Please note that if we do
+    not receive your acceptance within the specified time limit, regrettably, we will consider this
+    offer null and void.
+  </p>
+
+  <p>
+    Together, let's strive for excellence and create a work environment where everyone thrives.
+    If you ever need guidance or support along the way, please don't hesitate to reach out.
+  </p>
+</div>
+
+<h2>Salary</h2>
+<p>
+  We are pleased to inform you that your salary will be <strong>&#8377; {{ annual_ctc }}</strong>
+  per annum. You will receive your salary through our standard payroll schedule, with your first
+  paycheque scheduled for the 7th of the following month. Please note that this salary is subject
+  to adjustment in accordance with our employee compensation policies, as detailed in Annexure A.
+</p>
+
+<h2>Introductory Period</h2>
+<p>
+  There will be an initial 180-day introductory period. During this period, employees are
+  considered essential employees. After completing the introductory period, the individual will
+  become a regular full-time employee. Employees are eligible to use Paid Time Off (PTO) from
+  their 180th day of employment.
+</p>
+
+<h2>Tax Advice</h2>
+<p>
+  You are encouraged to obtain your own tax advice regarding your compensation. You agree that
+  the Company does not have a duty to design its compensation policies in a manner that minimises
+  your tax liabilities, and you will not make any claim against the Company or its Board of
+  Directors related to tax liabilities arising from your compensation.
+</p>
+
+<h2>Conflict of Interest &amp; Background Verification</h2>
+<p>
+  As part of your commitment to the Company, we request that during your employment you refrain
+  from engaging in any other employment, consulting, or business activity (whether full-time or
+  part-time) that may create a conflict of interest with GDS.
+</p>
+<p>
+  As part of our standard procedures, we conduct a thorough verification process covering your
+  character, antecedents, previous employment testimonials, educational qualifications, and
+  references. At any point, if information provided by you is found to be incorrect, suppressed,
+  or false, or if you are convicted of criminal activities or found guilty of financial
+  irregularities, your employment may be terminated immediately.
+</p>
+
+<h2>Separation</h2>
+<p>
+  As per GDS separation policy, your resignation will be considered valid only when officially
+  communicated to both your reporting manager and the HR Team. The employee has the right to
+  terminate the employment agreement by providing a written notice of at least
+  <strong>{{ notice_period }}</strong>. We understand that individual circumstances may vary
+  and are open to negotiating a shorter notice period where reasonable.
+</p>
+
+<h3>Notice Period</h3>
+<p>
+  GDS may or may not provide a {{ notice_period }} notice period in the event that termination
+  of employment is intended. This notice period is applicable in cases including but not limited to:
+</p>
+<ol class="clauses">
+  <li>Reference verification found unacceptable.</li>
+  <li>Employee found engaged in misrepresentation, misconduct, dishonesty, or moral turpitude.</li>
+  <li>Employee's failure to perform duties as reported by the client reporting manager or based on the client's dissatisfaction or request for removal.</li>
+  <li>Employee convicted of, or having pleaded guilty to, a felony or crime involving embezzlement, conversion of property, or fraud.</li>
+  <li>Employee's failure to abide by GDS or client work rules, code of conduct, or policies.</li>
+  <li>Non-availability to report to work for more than three days without informing the reporting manager or HR.</li>
+</ol>
+
+<h3>Benefits</h3>
+<p>
+  Group Medical Coverage (GMC): &#8377;&nbsp;3,00,000 per annum (self).<br>
+  Personal Accident Insurance: &#8377;&nbsp;10,00,000 per annum (self).
+</p>
+
+<h3>Leave</h3>
+<p>
+  Employees are entitled to one privilege leave per calendar month (12 days per year), which may
+  be carried forward if unutilised.
+</p>
+
+<h3>Right to Hire</h3>
+<p>
+  Depending upon your performance, the client or engagement team has the right to hire you
+  directly as a full-time employee, subject to mutual agreement.
+</p>
+
+<h3>Project Start Date</h3>
+<p>
+  The start date of your employment will be <strong>{{ date_of_joining }}</strong>.
+  Any change to the start date will be communicated to you. The offer of employment stands
+  cancelled in case of cessation of the Employer's project with the client for any reason.
+  The location of your work may change depending on client business needs.
+</p>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
+    <div class="signer-line">
+      <span class="signer-label">Authorised Signatory</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">&nbsp;</p>
+    <div class="signer-line">
+      <span class="signer-label">Employee Signature</span>
+    </div>
+  </div>
+</div>
+
+{# ── Annexure A: Salary Breakup ──────────────────────────────────────────── #}
+<h2 class="break-before">Annexure A — Salary Breakup</h2>
+
+<div class="salary-meta">
+  <div class="row">
+    <span class="label">Employee:</span>
+    <span>{{ candidate_name }}</span>
+  </div>
+  <div class="row">
+    <span class="label">Band / Designation:</span>
+    <span>{{ band }}{% if band %} — {% endif %}{{ designation }}</span>
+  </div>
+  <div class="row">
+    <span class="label">Effective Date:</span>
+    <span>{{ date_of_joining }}</span>
+  </div>
+  <div class="row">
+    <span class="label">Issue Date:</span>
+    <span>{{ offer_date }}</span>
+  </div>
+</div>
+
+<table class="salary-breakup">
+  <thead>
+    <tr>
+      <th>Salary Component</th>
+      <th class="numeric">Monthly (&#8377;)</th>
+      <th class="numeric">Annually (&#8377;)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="section-header"><td colspan="3">Earnings</td></tr>
+    <tr><td>Basic</td><td class="numeric">{{ basic_monthly }}</td><td class="numeric">{{ basic_annual }}</td></tr>
+    <tr><td>HRA</td><td class="numeric">{{ hra_monthly }}</td><td class="numeric">{{ hra_annual }}</td></tr>
+    <tr><td>Conveyance Allowance</td><td class="numeric">{{ conveyance_monthly }}</td><td class="numeric">{{ conveyance_annual }}</td></tr>
+    <tr><td>Medical Allowance</td><td class="numeric">{{ medical_allowance_monthly }}</td><td class="numeric">{{ medical_allowance_annual }}</td></tr>
+    <tr><td>Special Allowance</td><td class="numeric">{{ special_allowance_monthly }}</td><td class="numeric">{{ special_allowance_annual }}</td></tr>
+    <tr class="subtotal"><td>Total Earnings (A)</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
+
+    <tr class="section-header"><td colspan="3">Employee Deductions</td></tr>
+    <tr><td>Provident Fund</td><td class="numeric">{{ employee_pf_monthly }}</td><td class="numeric">{{ employee_pf_annual }}</td></tr>
+    {% if not esi_applies %}
+    {% else %}
+    <tr><td>ESI / Medical Benefits</td><td class="numeric">{{ employee_esi_monthly }}</td><td class="numeric">{{ employee_esi_annual }}</td></tr>
+    {% endif %}
+    <tr><td>Professional Tax</td><td class="numeric">{{ professional_tax_monthly }}</td><td class="numeric">{{ professional_tax_annual }}</td></tr>
+    <tr class="subtotal"><td>Total Deductions (B)</td><td class="numeric">{{ total_deductions_monthly }}</td><td class="numeric">{{ total_deductions_annual }}</td></tr>
+
+    <tr class="section-header"><td colspan="3">Employer Contributions</td></tr>
+    <tr><td>Provident Fund + EDLI + Admin</td><td class="numeric">{{ employer_pf_monthly }}</td><td class="numeric">{{ employer_pf_annual }}</td></tr>
+    {% if esi_applies %}
+    <tr><td>ESI / Medical &amp; Insurance Benefits</td><td class="numeric">{{ employer_esi_monthly }}</td><td class="numeric">{{ employer_esi_annual }}</td></tr>
+    {% elif not medical_opted_out %}
+    <tr><td>Medical Insurance (Employer)</td><td class="numeric">{{ medical_insurance_monthly }}</td><td class="numeric">{{ medical_insurance_annual }}</td></tr>
+    {% endif %}
+    <tr class="subtotal"><td>Total Employer Contributions (C)</td><td class="numeric">&nbsp;</td><td class="numeric">{{ employer_deductions_annual }}</td></tr>
+
+    <tr class="subtotal"><td>Net Salary (A − B)</td><td class="numeric">{{ net_take_home }}</td><td class="numeric">{{ net_take_home_annual }}</td></tr>
+    <tr class="total"><td>Annual CTC (A + C)</td><td class="numeric">&nbsp;</td><td class="numeric">{{ annual_ctc }}</td></tr>
+  </tbody>
+</table>
+
+<div class="notes-block">
+  <div class="notes-title">Notes</div>
+  <ul>
+    <li>Personal tax liability arising from your compensation and joining expenses, if applicable, will be solely borne by you as the employee. This includes all taxes associated with salary, bonuses, allowances, and benefits provided by the Company.</li>
+    <li>The Company policies and statutory guidelines govern all salary components.</li>
+    <li>This salary sheet is strictly confidential and must not be discussed with anyone other than your Globex Reporting Manager, personal Attorney, or Family Members.</li>
+  </ul>
+</div>
+
+{# ── Acceptance section ──────────────────────────────────────────────────── #}
+<h2 class="break-before">Acceptance</h2>
+
+<div class="acceptance">
+  <p>
+    I, <strong>{{ candidate_name }}</strong>, have received the offer of employment with the
+    compensation details stated above. I have read, understood, and accept the employment terms
+    and conditions. I shall join service with effect from
+    <strong>{{ date_of_joining }}</strong>.
+  </p>
+</div>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+    <div class="signer-line">
+      <span class="signer-label">Authorised Signatory</span><br>
+      <span class="muted">Date: {{ offer_date }}</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ candidate_name }}</p>
+    <div class="signer-line">
+      <span class="signer-label">Name &amp; Signature</span><br>
+      <span class="muted">Date:</span>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

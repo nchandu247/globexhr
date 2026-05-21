@@ -8,7 +8,7 @@ import time
 
 import frappe
 from ..api.zoho_sign import send_for_signature, submit_request
-from ..letters.merger import build_offer_context, merge_to_docx
+from ..letters.merger import build_offer_context, merge_to_pdf_via_html
 from ..utils.logging import log_error
 
 
@@ -95,8 +95,11 @@ def send_offer_letter(offer_name: str, force: bool = False) -> None:
             return
 
         # ── Generate document ────────────────────────────────────────────────
-        offer_docx = _generate_document(doc)
-        if not offer_docx:
+        # Renders HTML template via WeasyPrint to PDF bytes.
+        # Replaced DOCX-via-docxtpl path in commit ab2d5b8 (see spec
+        # 2026-05-21-weasyprint-offer-letter-design.md).
+        offer_pdf = _generate_document(doc)
+        if not offer_pdf:
             return  # _generate_document already logged
 
         # ── Send to Zoho Sign ────────────────────────────────────────────────
@@ -106,7 +109,7 @@ def send_offer_letter(offer_name: str, force: bool = False) -> None:
         ]
 
         request_id = send_for_signature(
-            file_bytes=offer_docx,
+            file_bytes=offer_pdf,
             document_name=f"Offer Letter - {doc.applicant_name}",
             signers=signers,
             metadata={
@@ -114,7 +117,7 @@ def send_offer_letter(offer_name: str, force: bool = False) -> None:
                 "docname": offer_name,
                 "letter_type": "offer_letter",
             },
-            file_extension="docx",
+            file_extension="pdf",
         )
 
         # ── Persist request_id (with deadlock retry — concurrent jobs can race) ──
@@ -201,10 +204,13 @@ def _get_applicant_email(offer_doc) -> str | None:
 
 
 def _generate_document(doc) -> bytes | None:
-    """Merge the DOCX template with Job Offer data and return DOCX bytes."""
+    """
+    Render the offer letter HTML template to PDF via WeasyPrint.
+    Returns PDF bytes ready to upload to Zoho Sign.
+    """
     try:
         context = build_offer_context(doc)
-        return merge_to_docx("offer_letter.docx", context)
+        return merge_to_pdf_via_html("offer_letter.html", context)
     except Exception as exc:
         log_error(
             f"_generate_document: doc={doc.name} error={str(exc)[:200]}",

@@ -38,6 +38,61 @@ def _render_template(template_filename: str, context: dict) -> DocxTemplate:
     return tpl
 
 
+_HTML_TEMPLATE_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "templates", "letters", "html")
+)
+
+
+def merge_to_pdf_via_html(template_filename: str, context: dict) -> bytes:
+    """
+    Render an HTML template (Jinja2) and produce PDF bytes via WeasyPrint.
+
+    Templates live in greythr_bridge/templates/letters/html/. Each letter
+    template extends _base.html (letterhead, watermark, footer, Zoho tag
+    area) and uses _styles.css for typography, layout, and brand colours.
+
+    The returned PDF includes invisible Zoho Sign text tags ({{S:R1*}} and
+    {{S:R2*}}) so Zoho auto-creates Signature fields on upload — no field
+    coordinates needed.
+
+    Raises frappe.ValidationError if the template file is missing.
+    Raises RuntimeError if WeasyPrint rendering fails.
+    """
+    from weasyprint import HTML, CSS
+
+    template_path = os.path.join(_HTML_TEMPLATE_DIR, template_filename)
+    css_path = os.path.join(_HTML_TEMPLATE_DIR, "_styles.css")
+
+    if not os.path.exists(template_path):
+        frappe.throw(
+            f"HTML template not found: {template_filename}<br>"
+            f"Expected path: {template_path}",
+            title="Template Missing",
+        )
+
+    # Use Jinja2 directly so we can resolve {% extends '_base.html' %} against
+    # the html/ directory. frappe.render_template doesn't know about our path.
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    env = Environment(
+        loader=FileSystemLoader(_HTML_TEMPLATE_DIR),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    template = env.get_template(template_filename)
+    rendered_html = template.render(**context)
+
+    pdf_bytes = HTML(string=rendered_html, base_url=_HTML_TEMPLATE_DIR).write_pdf(
+        stylesheets=[CSS(filename=css_path)] if os.path.exists(css_path) else []
+    )
+
+    if not pdf_bytes or len(pdf_bytes) < 5000:
+        raise RuntimeError(
+            f"WeasyPrint produced a suspiciously small PDF ({len(pdf_bytes) if pdf_bytes else 0} bytes) "
+            f"for template {template_filename}. Likely a rendering failure."
+        )
+
+    return pdf_bytes
+
+
 def merge_to_docx(template_filename: str, context: dict) -> bytes:
     """
     Fill *template_filename* (inside templates/letters/) with *context*

@@ -335,6 +335,89 @@ class TestOfferContextDateOfJoining(unittest.TestCase):
         )
 
 
+class TestPdfCheck(unittest.TestCase):
+    """Verify pdf_check.check_pdf_dependencies() returns expected structure."""
+
+    def test_returns_all_expected_keys(self):
+        from greythr_bridge.letters.pdf_check import check_pdf_dependencies
+        result = check_pdf_dependencies()
+        expected_keys = {
+            "weasyprint_installed", "weasyprint_version",
+            "libcairo_available", "libpango_available", "libgdk_pixbuf_available",
+        }
+        self.assertTrue(
+            expected_keys.issubset(result.keys()),
+            f"Missing keys: {expected_keys - set(result.keys())}",
+        )
+        # Booleans should be booleans
+        for k in ("weasyprint_installed", "libcairo_available", "libpango_available", "libgdk_pixbuf_available"):
+            self.assertIsInstance(result[k], bool, f"{k} should be bool")
+
+
+def _weasyprint_can_render() -> bool:
+    """
+    Check whether WeasyPrint can actually render on this host.
+
+    WeasyPrint imports fine on Windows but fails at render time because
+    libgobject/libcairo are GTK libraries not present by default. On Frappe
+    Cloud's Ubuntu these are pre-installed, so tests run there.
+
+    This probes by attempting a minimal render. Returns True only if
+    rendering actually works end-to-end.
+    """
+    try:
+        from weasyprint import HTML
+        HTML(string="<p>probe</p>").write_pdf()
+        return True
+    except Exception:
+        return False
+
+
+_WEASYPRINT_RENDER_OK = _weasyprint_can_render()
+
+
+class TestMergeToPdfViaHtml(unittest.TestCase):
+    """
+    Tests for merge_to_pdf_via_html(). Skipped on hosts where WeasyPrint
+    can't render (typically Windows dev machines missing GTK libs).
+    These run on Frappe Cloud where libcairo/libpango/libgdk-pixbuf are present.
+    """
+
+    @unittest.skipUnless(_WEASYPRINT_RENDER_OK, "WeasyPrint cannot render on this host (missing GTK libs)")
+    def test_returns_valid_pdf_bytes(self):
+        from greythr_bridge.letters.merger import merge_to_pdf_via_html, build_offer_context
+        ctx = build_offer_context(FakeDoc())
+
+        pdf = merge_to_pdf_via_html("offer_letter.html", ctx)
+        self.assertIsInstance(pdf, bytes)
+        self.assertTrue(pdf.startswith(b"%PDF-"), "Output is not a valid PDF (missing magic bytes)")
+        self.assertGreater(len(pdf), 10_000, "PDF unreasonably small — likely a rendering failure")
+
+    @unittest.skipUnless(_WEASYPRINT_RENDER_OK, "WeasyPrint cannot render on this host")
+    def test_pdf_contains_candidate_name(self):
+        from greythr_bridge.letters.merger import merge_to_pdf_via_html, build_offer_context
+        ctx = build_offer_context(FakeDoc())
+        pdf = merge_to_pdf_via_html("offer_letter.html", ctx)
+        # WeasyPrint embeds text such that ASCII strings appear in the PDF bytes
+        self.assertIn(b"Test Candidate", pdf)
+
+    @unittest.skipUnless(_WEASYPRINT_RENDER_OK, "WeasyPrint cannot render on this host")
+    def test_pdf_includes_zoho_signature_tags(self):
+        from greythr_bridge.letters.merger import merge_to_pdf_via_html, build_offer_context
+        ctx = build_offer_context(FakeDoc())
+        pdf = merge_to_pdf_via_html("offer_letter.html", ctx)
+        # Tags rendered in white text but still present in PDF byte stream
+        self.assertIn(b"S:R1*", pdf)
+        self.assertIn(b"S:R2*", pdf)
+
+    def test_raises_on_missing_template(self):
+        """This test runs regardless of WeasyPrint render availability —
+        the missing-template check happens before any rendering."""
+        from greythr_bridge.letters.merger import merge_to_pdf_via_html
+        with self.assertRaises(Exception):
+            merge_to_pdf_via_html("nonexistent_template.html", {})
+
+
 class TestBuildScriptPolish(unittest.TestCase):
     """
     Verify the polish passes in scripts/build_offer_template.py:

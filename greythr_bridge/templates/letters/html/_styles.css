@@ -1,0 +1,306 @@
+/* ============================================================
+   Globex Digital Solutions — Offer Letter design system
+   Used by: offer_letter.html (and future letters via _base.html)
+   Renders via WeasyPrint
+   ============================================================ */
+
+/* ── Reset ─────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Page setup (CSS Paged Media) ──────────────────────────── */
+@page {
+  size: A4;
+  margin: 28mm 18mm 22mm 18mm;
+
+  @top-left {
+    content: element(letterhead-logo);
+    vertical-align: middle;
+  }
+  @top-right {
+    content: element(letterhead-meta);
+    vertical-align: middle;
+    text-align: right;
+  }
+  @bottom-center {
+    content: element(footer);
+    vertical-align: bottom;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-size: 8pt;
+    color: #777;
+    vertical-align: bottom;
+  }
+}
+
+/* ── Typography ────────────────────────────────────────────── */
+body {
+  font-family: 'Inter', 'Segoe UI', 'Calibri', 'Helvetica Neue', sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1a1a1a;
+}
+
+h1 {
+  font-size: 18pt;
+  font-weight: 600;
+  color: #01248A;
+  letter-spacing: 0.5pt;
+  text-align: center;
+  margin-bottom: 6mm;
+}
+
+h2 {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #01248A;
+  margin-top: 5mm;
+  margin-bottom: 2mm;
+  page-break-after: avoid;
+}
+
+h3 {
+  font-size: 11pt;
+  font-weight: 600;
+  margin-top: 3mm;
+  margin-bottom: 1.5mm;
+  page-break-after: avoid;
+}
+
+p {
+  margin-bottom: 2.5mm;
+  text-align: justify;
+  hyphens: auto;
+}
+
+strong { font-weight: 600; }
+
+/* ── Letterhead (runs on every page) ───────────────────────── */
+.letterhead-logo {
+  position: running(letterhead-logo);
+}
+.letterhead-logo .brand {
+  font-family: 'Inter', sans-serif;
+  font-size: 16pt;
+  font-weight: 700;
+  color: #01248A;
+  letter-spacing: -0.5pt;
+}
+.letterhead-logo .brand .accent {
+  color: #C00;
+}
+
+.letterhead-meta {
+  position: running(letterhead-meta);
+  font-size: 8pt;
+  color: #555;
+  line-height: 1.3;
+}
+
+/* ── Footer (runs on every page) ───────────────────────────── */
+.footer {
+  position: running(footer);
+  font-size: 8pt;
+  color: #555;
+  text-align: center;
+  border-top: 0.5pt solid #ccc;
+  padding-top: 1.5mm;
+  width: 100%;
+}
+.footer .company-name {
+  font-weight: 600;
+  color: #01248A;
+  display: block;
+  margin-bottom: 0.5mm;
+}
+
+/* ── Watermark (fixed background on every page) ────────────── */
+.watermark {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-family: 'Inter', sans-serif;
+  font-size: 100pt;
+  font-weight: 800;
+  color: #01248A;
+  opacity: 0.08;
+  z-index: -1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ── Document header (ref / date) ──────────────────────────── */
+.doc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4mm;
+  font-size: 10pt;
+}
+.doc-header .ref { color: #444; }
+.doc-header .date { color: #444; }
+
+/* ── Salutation ────────────────────────────────────────────── */
+.salutation {
+  font-size: 11pt;
+  font-weight: 600;
+  margin-bottom: 4mm;
+}
+
+/* ── Section spacing ──────────────────────────────────────── */
+.section {
+  margin-bottom: 4mm;
+}
+
+/* ── Salary breakup table (Annexure A) ─────────────────────── */
+table.salary-breakup {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 3mm;
+  margin-bottom: 4mm;
+  font-size: 10pt;
+  page-break-inside: avoid;
+}
+table.salary-breakup thead th {
+  background: #01248A;
+  color: white;
+  padding: 2mm 3mm;
+  text-align: left;
+  font-weight: 600;
+  font-size: 10pt;
+}
+table.salary-breakup thead th.numeric { text-align: right; }
+table.salary-breakup tbody td {
+  padding: 1.8mm 3mm;
+  border-bottom: 0.5pt solid #ddd;
+}
+table.salary-breakup tbody td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+table.salary-breakup tr.section-header td {
+  background: #eef2f9;
+  font-weight: 600;
+  color: #01248A;
+  padding: 1.5mm 3mm;
+}
+table.salary-breakup tr.subtotal td {
+  background: #f6f8fc;
+  font-weight: 600;
+  border-top: 1pt solid #01248A;
+  border-bottom: 1pt solid #01248A;
+}
+table.salary-breakup tr.total td {
+  background: #01248A;
+  color: white;
+  font-weight: 700;
+  font-size: 11pt;
+}
+
+/* ── Salary meta info block above table ────────────────────── */
+.salary-meta {
+  font-size: 10pt;
+  margin-bottom: 2mm;
+  background: #f6f8fc;
+  border-left: 3pt solid #01248A;
+  padding: 2mm 3mm;
+}
+.salary-meta .row { display: flex; gap: 8mm; }
+.salary-meta .row .label { font-weight: 600; color: #555; min-width: 32mm; }
+
+/* ── Notes block ──────────────────────────────────────────── */
+.notes-block {
+  background: #fafafa;
+  border-left: 3pt solid #999;
+  padding: 2mm 3mm;
+  margin-top: 3mm;
+  font-size: 9.5pt;
+}
+.notes-block .notes-title {
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 1mm;
+}
+.notes-block ul {
+  list-style: disc;
+  padding-left: 5mm;
+}
+.notes-block li {
+  margin-bottom: 1mm;
+  line-height: 1.4;
+}
+
+/* ── Numbered list (notice period clauses) ─────────────────── */
+ol.clauses {
+  padding-left: 8mm;
+  margin-top: 1mm;
+  margin-bottom: 2mm;
+}
+ol.clauses li {
+  margin-bottom: 1mm;
+  text-align: justify;
+}
+
+/* ── Signature blocks ──────────────────────────────────────── */
+.signature-block {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12mm;
+  page-break-inside: avoid;
+}
+.signature-block .signer {
+  width: 48%;
+}
+.signature-block .signer .signer-name {
+  font-weight: 600;
+  color: #01248A;
+  margin-bottom: 8mm;
+}
+.signature-block .signer .signer-line {
+  border-top: 0.75pt solid #333;
+  padding-top: 1.5mm;
+  font-size: 9pt;
+  color: #444;
+}
+.signature-block .signer .signer-label {
+  font-size: 9pt;
+  color: #666;
+}
+
+/* ── Acceptance block ──────────────────────────────────────── */
+.acceptance {
+  margin-top: 8mm;
+  padding: 4mm;
+  background: #f6f8fc;
+  border-left: 3pt solid #01248A;
+  page-break-inside: avoid;
+}
+.acceptance p { margin-bottom: 1.5mm; }
+
+/* ── Reporting Manager callout (when present) ──────────────── */
+.reporting-mgr {
+  font-style: italic;
+  color: #444;
+}
+
+/* ── Zoho Sign signature tags — invisible to humans ────────── */
+.zoho-tags {
+  color: white;
+  font-size: 0.1pt;
+  line-height: 0;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* ── Print-specific tweaks ──────────────────────────────────── */
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ── Utility classes ──────────────────────────────────────── */
+.no-break { page-break-inside: avoid; }
+.break-before { page-break-before: always; }
+.muted { color: #666; }
+.center { text-align: center; }
+.right { text-align: right; }
+.mt-sm { margin-top: 2mm; }
+.mt-md { margin-top: 4mm; }
+.mt-lg { margin-top: 6mm; }
