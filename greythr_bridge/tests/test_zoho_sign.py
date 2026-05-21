@@ -10,6 +10,7 @@ import responses as rsps_lib
 
 from greythr_bridge.api.zoho_sign import (
     send_for_signature,
+    submit_request,
     get_signed_document,
     resend_signing_request,
     verify_webhook_hmac,
@@ -36,6 +37,16 @@ def _add_token_mock():
         ZOHO_TOKEN_URL,
         json={"access_token": "test_access_token", "expires_in": 3600},
         status=200,
+    )
+
+
+def _add_submit_mock(request_id: str, status: int = 200):
+    """Register a mock for the /requests/{request_id}/submit endpoint."""
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests/{request_id}/submit",
+        json={"requests": {"request_id": request_id, "status": "inprogress"}},
+        status=status,
     )
 
 
@@ -94,6 +105,7 @@ def test_send_for_signature_returns_request_id(patch_frappe, settings):
         json={"requests": {"request_id": "REQ-001", "status": "inprogress"}},
         status=200,
     )
+    _add_submit_mock("REQ-001")
 
     result = send_for_signature(
         file_bytes=b"%PDF-1.4 test",
@@ -119,6 +131,7 @@ def test_send_for_signature_accepts_docx(patch_frappe, settings):
         json={"requests": {"request_id": "REQ-DOCX-001"}},
         status=200,
     )
+    _add_submit_mock("REQ-DOCX-001")
 
     result = send_for_signature(
         file_bytes=b"PK\x03\x04 fake docx",
@@ -184,10 +197,96 @@ def test_token_refresh_called_when_no_cache(patch_frappe, settings):
         json={"requests": {"request_id": "REQ-003"}},
         status=200,
     )
+    _add_submit_mock("REQ-003")
 
     send_for_signature(b"%PDF", "Test", _signers(), _metadata())
     token_calls = [c for c in rsps_lib.calls if ZOHO_TOKEN_URL in c.request.url]
-    assert len(token_calls) == 1
+    # send_for_signature makes 2 API calls (create + submit). The mock's
+    # frappe.db.set_value doesn't actually persist the cached token between
+    # calls, so each request triggers a fresh OAuth refresh. The contract
+    # being tested is "refresh DOES happen when cache is missing".
+    assert len(token_calls) >= 1
+
+
+# ── submit step (Phase 4 — fixes 'all drafts, no emails' bug) ────────────────
+
+@rsps_lib.activate
+def test_send_for_signature_calls_submit_after_create(patch_frappe, settings):
+    """
+    Regression test: send_for_signature MUST call the /submit endpoint
+    after creating the request. Without this step, documents stay as DRAFT
+    in Zoho Sign and no emails are sent to signers.
+    """
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
+
+    _add_token_mock()
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests",
+        json={"requests": {"request_id": "REQ-SUBMIT-TEST"}},
+        status=200,
+    )
+    _add_submit_mock("REQ-SUBMIT-TEST")
+
+    send_for_signature(b"%PDF", "Test", _signers(), _metadata())
+
+    submit_calls = [
+        c for c in rsps_lib.calls
+        if f"{ZOHO_BASE}/requests/REQ-SUBMIT-TEST/submit" in c.request.url
+    ]
+    assert len(submit_calls) == 1, "submit endpoint was not called exactly once"
+
+
+@rsps_lib.activate
+def test_send_for_signature_raises_when_submit_fails(patch_frappe, settings):
+    """If the submit step fails, send_for_signature must raise — we should
+    NOT return success for a stuck draft."""
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
+
+    _add_token_mock()
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests",
+        json={"requests": {"request_id": "REQ-STUCK"}},
+        status=200,
+    )
+    rsps_lib.add(
+        rsps_lib.POST,
+        f"{ZOHO_BASE}/requests/REQ-STUCK/submit",
+        json={"message": "Internal Server Error"},
+        status=500,
+    )
+
+    from greythr_bridge.api.exceptions import ZohoSignError
+    with pytest.raises(ZohoSignError, match="submit_request failed"):
+        send_for_signature(b"%PDF", "Test", _signers(), _metadata())
+
+
+@rsps_lib.activate
+def test_submit_request_can_be_called_standalone(patch_frappe, settings):
+    """Orphan-recovery path: submit an existing draft by request_id."""
+    settings.get_password.return_value = "test_refresh_token"
+    settings.zoho_sign_access_token = None
+    settings.zoho_sign_token_expires_at = None
+    settings.zoho_sign_client_id = "client_id"
+
+    _add_token_mock()
+    _add_submit_mock("167481000000045108")
+
+    # Should not raise
+    submit_request("167481000000045108")
+
+    submit_calls = [
+        c for c in rsps_lib.calls
+        if "/submit" in c.request.url
+    ]
+    assert len(submit_calls) == 1
 
 
 # ── get_signed_document ───────────────────────────────────────────────────────

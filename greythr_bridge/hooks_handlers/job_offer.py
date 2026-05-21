@@ -7,7 +7,7 @@ All real work is enqueued — handlers must return within 5 seconds.
 import time
 
 import frappe
-from ..api.zoho_sign import send_for_signature
+from ..api.zoho_sign import send_for_signature, submit_request
 from ..letters.merger import build_offer_context, merge_to_docx
 from ..utils.logging import log_error
 
@@ -115,6 +115,31 @@ def send_offer_letter(offer_name: str, force: bool = False) -> None:
             f"send_offer_letter: {offer_name} error={str(exc)[:200]}",
             "greytHR Offer Letter Send Error",
         )
+
+
+@frappe.whitelist()
+def submit_orphan_draft(request_id: str) -> dict:
+    """
+    Submit an existing Zoho Sign draft by request_id.
+
+    Use this to recover the 'orphan drafts' created before we added the
+    automatic submit step. Cancels nothing — just sends out the existing draft.
+
+    Call from any logged-in browser session:
+        https://<site>/api/method/greythr_bridge.hooks_handlers.job_offer.submit_orphan_draft?request_id=167481000000045108
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Only System Manager can submit drafts.")
+
+    try:
+        submit_request(request_id)
+        return {"status": "submitted", "request_id": request_id}
+    except Exception as exc:
+        log_error(
+            f"submit_orphan_draft: {request_id} error={str(exc)[:200]}",
+            "greytHR Zoho Sign Submit Error",
+        )
+        frappe.throw(f"Submit failed: {str(exc)[:200]}")
 
 
 @frappe.whitelist()

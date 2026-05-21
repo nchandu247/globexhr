@@ -191,7 +191,32 @@ def send_for_signature(
         raise ZohoSignError(
             f"No request_id in Zoho Sign response: {resp.text[:200]}"
         )
+
+    # ── Step 2: SUBMIT the draft so signers actually receive emails ───────────
+    # Zoho Sign's /requests endpoint only CREATES a draft. Without this submit
+    # call, the document sits in Zoho as DRAFT forever and no emails go out.
+    submit_request(request_id)
+
     return request_id
+
+
+def submit_request(request_id: str) -> None:
+    """
+    Submit a draft Zoho Sign request — triggers the email to the first signer.
+
+    Use directly to recover an orphan draft. Normally called automatically
+    by send_for_signature.
+    """
+    resp = requests.post(
+        f"{_BASE}/requests/{request_id}/submit",
+        headers=_headers(),
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201, 204):
+        raise ZohoSignError(
+            f"submit_request failed for {request_id}: "
+            f"HTTP {resp.status_code}: {resp.text[:200]}"
+        )
 
 
 def get_signed_document(request_id: str) -> bytes:
