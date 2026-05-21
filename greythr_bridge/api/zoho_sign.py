@@ -156,12 +156,18 @@ def send_for_signature(
         for s in sorted(signers, key=lambda x: x["order"])
     ]
 
+    # Zoho Sign's `description` field rejects JSON specials (quotes, braces,
+    # colons) with error code 9013 "invalid characters". Use plain text and
+    # let the webhook look up the source doc by request_id (see webhooks/zoho_sign.py).
+    # `metadata` is kept in the signature for caller-side context only — it is
+    # NOT sent to Zoho.
+    _ = metadata  # silence unused-arg lint
     request_data = {
         "requests": {
             "request_name": document_name,
             "expiration_days": expiry_days,
             "is_sequential": True,
-            "description": json.dumps(metadata),  # routed back to us via webhook
+            "description": document_name,
             "actions": actions,
         }
     }

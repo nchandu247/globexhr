@@ -59,17 +59,13 @@ def callback():
             frappe.local.response["http_status_code"] = 400
             return {"error": "Request timestamp out of acceptable range"}
 
-        # ── 4. Parse metadata we embedded when sending ─────────────────────────
-        description_str = notifications.get("description", "{}")
-        try:
-            meta = json.loads(description_str)
-        except (json.JSONDecodeError, TypeError):
-            meta = {}
-
-        letter_type = meta.get("letter_type", "")
-        docname = meta.get("docname", "")
+        # ── 4. Identify the source document by request_id ──────────────────────
+        # We no longer parse the description field (Zoho's char filter rejects
+        # JSON). Instead, look up which Job Offer / future doc this request_id
+        # belongs to using the custom_zoho_sign_* fields we set when sending.
         operation_type = notifications.get("operation_type", "")
         request_id = notifications.get("request_id", "")
+        docname, letter_type = _resolve_source_doc(request_id)
 
         # ── 5. Dispatch — all real work is enqueued ────────────────────────────
         if operation_type == "RequestCompleted":
@@ -158,6 +154,38 @@ def _notify_hr(docname: str, message: str) -> None:
             f'frappe.show_alert({{message: "{message}", indicator: "orange"}})',
             user=row["parent"],
         )
+
+
+# ── source-document lookup ────────────────────────────────────────────────────
+
+def _resolve_source_doc(request_id: str) -> tuple[str, str]:
+    """
+    Find which document this Zoho Sign request_id belongs to.
+
+    Returns (docname, letter_type) or ("", "") if no match.
+
+    Priority order — add new letter types here as we wire them in later phases:
+      1. Job Offer.custom_zoho_sign_request_id      -> offer_letter
+      2. Job Offer.custom_zoho_sign_nda_request_id  -> nda (NOT used in Phase 5)
+    """
+    if not request_id:
+        return ("", "")
+
+    # Job Offer — offer letter
+    offer_name = frappe.db.get_value(
+        "Job Offer", {"custom_zoho_sign_request_id": request_id}, "name"
+    )
+    if offer_name:
+        return (offer_name, "offer_letter")
+
+    # Job Offer — NDA (reserved for future use; currently NDA flow is disabled)
+    nda_offer = frappe.db.get_value(
+        "Job Offer", {"custom_zoho_sign_nda_request_id": request_id}, "name"
+    )
+    if nda_offer:
+        return (nda_offer, "nda")
+
+    return ("", "")
 
 
 # ── signature helpers ─────────────────────────────────────────────────────────
