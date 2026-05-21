@@ -79,15 +79,10 @@ strong { font-weight: 600; }
 .letterhead-logo {
   position: running(letterhead-logo);
 }
-.letterhead-logo .brand {
-  font-family: 'Inter', sans-serif;
-  font-size: 16pt;
-  font-weight: 700;
-  color: #01248A;
-  letter-spacing: -0.5pt;
-}
-.letterhead-logo .brand .accent {
-  color: #C00;
+.letterhead-logo .logo {
+  height: 12mm;
+  width: auto;
+  display: block;
 }
 
 .letterhead-meta {
@@ -114,20 +109,20 @@ strong { font-weight: 600; }
   margin-bottom: 0.5mm;
 }
 
-/* ── Watermark (fixed background on every page) ────────────── */
+/* ── Watermark (fixed image on every page, dimmed via opacity) ── */
 .watermark {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) rotate(-30deg);
-  font-family: 'Inter', sans-serif;
-  font-size: 100pt;
-  font-weight: 800;
-  color: #01248A;
-  opacity: 0.08;
   z-index: -1;
   pointer-events: none;
-  white-space: nowrap;
+  opacity: 0.08;
+}
+.watermark img {
+  width: 140mm;
+  height: auto;
+  display: block;
 }
 
 /* ── Document header (ref / date) ──────────────────────────── */

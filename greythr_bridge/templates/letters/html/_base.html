@@ -6,12 +6,14 @@
 </head>
 <body>
 
-  {# ── Watermark (CSS-positioned fixed background) ───────────────────────── #}
-  <div class="watermark">globex DIGITAL</div>
+  {# ── Watermark (fixed image background, dimmed via CSS opacity) ────────── #}
+  <div class="watermark">
+    <img src="img/logo.png" alt="">
+  </div>
 
   {# ── Letterhead — appears in @top-left of every page via CSS running() ─── #}
   <div class="letterhead-logo">
-    <div class="brand">globex<span class="accent">.</span> DIGITAL</div>
+    <img src="img/logo.png" alt="Globex Digital Solutions" class="logo">
   </div>
 
   {# ── Letterhead meta — appears in @top-right of every page ────────────── #}
