@@ -229,5 +229,40 @@ class TestBuildOfferContext(unittest.TestCase):
         self.assertEqual(ctx["acceptance_deadline"], "")
 
 
+class TestAppendZohoSignatureTags(unittest.TestCase):
+    """
+    Verify _append_zoho_signature_tags() injects Zoho text tags into a real
+    DOCX so /submit doesn't fail with error 9101 'Add atleast one field for
+    a signer'.
+    """
+
+    def test_appends_signature_tags_for_both_signers(self):
+        import tempfile
+        from docx import Document
+        from greythr_bridge.letters.merger import _append_zoho_signature_tags
+
+        # Create a fresh empty DOCX
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            doc = Document()
+            doc.add_paragraph("Existing content")
+            doc.save(tmp_path)
+
+            _append_zoho_signature_tags(tmp_path)
+
+            # Reopen and verify tags are present
+            result = Document(tmp_path)
+            all_text = "\n".join(p.text for p in result.paragraphs)
+            self.assertIn("{{S:R1*}}", all_text,
+                          "Signer 1 mandatory signature tag missing")
+            self.assertIn("{{S:R2*}}", all_text,
+                          "Signer 2 mandatory signature tag missing")
+            self.assertIn("Existing content", all_text,
+                          "Original content was destroyed")
+        finally:
+            os.unlink(tmp_path)
+
+
 if __name__ == "__main__":
     unittest.main()

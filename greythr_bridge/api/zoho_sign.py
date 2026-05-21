@@ -103,35 +103,6 @@ _MIME_BY_EXT = {
 }
 
 
-def _signer_signature_field(signing_order: int) -> list:
-    """
-    Return a list with one mandatory Signature field for a given signer.
-
-    Placement is hardcoded on page 0 to keep both signers visible without
-    needing to know the document's page count. Signer 1 (HR) gets the left
-    half; signer 2 (candidate) gets the right half.
-
-    A4 portrait is roughly 595 x 842 in Zoho's coordinate space.
-    """
-    is_first_signer = signing_order == 1
-    x = 50 if is_first_signer else 320
-    label = "HR Signature" if is_first_signer else "Candidate Signature"
-
-    return [
-        {
-            "field_label": label,
-            "field_type_name": "Signature",
-            "field_category": "image",
-            "is_mandatory": True,
-            "page_no": 0,
-            "x_value": x,
-            "y_value": 750,
-            "abs_width": 200,
-            "abs_height": 40,
-        }
-    ]
-
-
 def send_for_signature(
     file_bytes: bytes,
     document_name: str,
@@ -181,11 +152,11 @@ def send_for_signature(
             "recipient_email": s["email"],
             "signing_order": s["order"],
             "verify_recipient": False,
-            # Zoho Sign requires at least one field per signer or /submit returns
-            # error 9101. Place a signature box on page 0 (temporary — Option A).
-            # TODO Option B: embed \s1\ \s2\ smart-tags in the DOCX template at
-            # the actual signature-line positions for proper visual alignment.
-            "fields": _signer_signature_field(s["order"]),
+            # Signature fields are auto-detected from {{S:R1*}} / {{S:R2*}} text
+            # tags embedded in the document (see letters/merger.py:_append_zoho_tags).
+            # Hardcoded coordinate-based fields were tried in commit fc4a4dd but
+            # failed with Zoho error 4004 because they need document_id/action_id
+            # that only exist after the document is created.
         }
         for s in sorted(signers, key=lambda x: x["order"])
     ]

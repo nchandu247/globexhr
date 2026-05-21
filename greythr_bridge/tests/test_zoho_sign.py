@@ -269,39 +269,6 @@ def test_send_for_signature_raises_when_submit_fails(patch_frappe, settings):
 
 
 @rsps_lib.activate
-def test_send_for_signature_includes_signature_fields_for_each_signer(patch_frappe, settings):
-    """
-    Regression test for Zoho error 9101 'Add atleast one field for a signer'.
-    Each action MUST include at least one Signature field or /submit fails.
-    """
-    settings.get_password.return_value = "test_refresh_token"
-    settings.zoho_sign_access_token = None
-    settings.zoho_sign_token_expires_at = None
-    settings.zoho_sign_client_id = "client_id"
-
-    _add_token_mock()
-    rsps_lib.add(
-        rsps_lib.POST,
-        f"{ZOHO_BASE}/requests",
-        json={"requests": {"request_id": "REQ-FIELDS-TEST"}},
-        status=200,
-    )
-    _add_submit_mock("REQ-FIELDS-TEST")
-
-    send_for_signature(b"%PDF", "Test", _signers(), _metadata())
-
-    create_call = next(
-        c for c in rsps_lib.calls
-        if c.request.url == f"{ZOHO_BASE}/requests"
-    )
-    # The body is multipart/form-data; parse out the 'data' field.
-    body_text = create_call.request.body.decode(errors="replace")
-    assert '"fields"' in body_text, "fields array missing from request payload"
-    assert '"Signature"' in body_text, "Signature field_type_name missing"
-    assert body_text.count('"field_type_name"') == 2, "expected one field per signer"
-
-
-@rsps_lib.activate
 def test_submit_request_can_be_called_standalone(patch_frappe, settings):
     """Orphan-recovery path: submit an existing draft by request_id."""
     settings.get_password.return_value = "test_refresh_token"

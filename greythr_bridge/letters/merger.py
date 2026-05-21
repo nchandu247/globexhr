@@ -41,7 +41,11 @@ def _render_template(template_filename: str, context: dict) -> DocxTemplate:
 def merge_to_docx(template_filename: str, context: dict) -> bytes:
     """
     Fill *template_filename* (inside templates/letters/) with *context*
-    and return DOCX bytes.
+    and return DOCX bytes — ready to upload to Zoho Sign.
+
+    After Jinja2 rendering, appends Zoho Sign text tags so Zoho auto-creates
+    a Signature field for each signer. Without this, /submit returns
+    error 9101 ("Add atleast one field for a signer").
 
     Preferred over merge_to_pdf() because Zoho Sign accepts .docx uploads
     natively and converts to PDF server-side. No LibreOffice dependency.
@@ -53,6 +57,7 @@ def merge_to_docx(template_filename: str, context: dict) -> bytes:
         tmp_path = tmp.name
     try:
         tpl.save(tmp_path)
+        _append_zoho_signature_tags(tmp_path)
         with open(tmp_path, "rb") as f:
             return f.read()
     finally:
@@ -60,6 +65,32 @@ def merge_to_docx(template_filename: str, context: dict) -> bytes:
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+def _append_zoho_signature_tags(docx_path: str) -> None:
+    """
+    Append a paragraph at the end of the DOCX with Zoho Sign text tags.
+
+    Tags:
+      {{S:R1*}}  — mandatory Signature field for recipient 1 (HR signatory)
+      {{S:R2*}}  — mandatory Signature field for recipient 2 (candidate)
+
+    Zoho Sign auto-detects these tags on upload and replaces them with
+    interactive signature boxes. Tags are rendered in a small font so they
+    are visually subtle in the unsigned preview; Zoho normally hides them
+    entirely in the final signed PDF.
+
+    Done as a post-processing step (not inside the template) to avoid the
+    `{{ }}` syntax conflicting with docxtpl/Jinja2 expression evaluation.
+    """
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document(docx_path)
+    para = doc.add_paragraph()
+    run = para.add_run("{{S:R1*}}                    {{S:R2*}}")
+    run.font.size = Pt(8)
+    doc.save(docx_path)
 
 
 def merge_to_pdf(template_filename: str, context: dict) -> bytes:
