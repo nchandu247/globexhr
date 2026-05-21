@@ -10,16 +10,11 @@
 /* ── Page setup (CSS Paged Media) ──────────────────────────── */
 @page {
   size: A4;
-  margin: 28mm 18mm 22mm 18mm;
+  margin: 22mm 18mm 28mm 18mm;  /* extra bottom for taller footer (address inside) */
 
   @top-left {
     content: element(letterhead-logo);
     vertical-align: middle;
-  }
-  @top-right {
-    content: element(letterhead-meta);
-    vertical-align: middle;
-    text-align: right;
   }
   @bottom-center {
     content: element(footer);
@@ -85,14 +80,7 @@ strong { font-weight: 600; }
   display: block;
 }
 
-.letterhead-meta {
-  position: running(letterhead-meta);
-  font-size: 8pt;
-  color: #555;
-  line-height: 1.3;
-}
-
-/* ── Footer (runs on every page) ───────────────────────────── */
+/* ── Footer (runs on every page, includes company address) ─── */
 .footer {
   position: running(footer);
   font-size: 8pt;
@@ -101,12 +89,18 @@ strong { font-weight: 600; }
   border-top: 0.5pt solid #ccc;
   padding-top: 1.5mm;
   width: 100%;
+  line-height: 1.35;
 }
 .footer .company-name {
   font-weight: 600;
   color: #01248A;
   display: block;
-  margin-bottom: 0.5mm;
+  margin-bottom: 0.3mm;
+  font-size: 9pt;
+}
+.footer .footer-address,
+.footer .footer-contact {
+  display: block;
 }
 
 /* ── Watermark (fixed image on every page, dimmed via opacity) ── */
@@ -190,16 +184,35 @@ table.salary-breakup tr.total td {
   font-size: 11pt;
 }
 
-/* ── Salary meta info block above table ────────────────────── */
+/* ── Salary meta info block above table (proper key-value grid) ─ */
 .salary-meta {
   font-size: 10pt;
   margin-bottom: 2mm;
   background: #f6f8fc;
   border-left: 3pt solid #01248A;
-  padding: 2mm 3mm;
+  padding: 3mm 4mm;
 }
-.salary-meta .row { display: flex; gap: 8mm; }
-.salary-meta .row .label { font-weight: 600; color: #555; min-width: 32mm; }
+.salary-meta dl {
+  display: table;       /* gives consistent column widths */
+  width: auto;
+  border-spacing: 0 0.5mm;
+}
+.salary-meta dt,
+.salary-meta dd {
+  display: table-cell;
+  padding: 0.4mm 0;
+  vertical-align: baseline;
+}
+.salary-meta dt {
+  font-weight: 600;
+  color: #444;
+  padding-right: 8mm;
+  width: 40mm;          /* fixed column width = column alignment */
+  white-space: nowrap;
+}
+.salary-meta dd {
+  color: #1a1a1a;
+}
 
 /* ── Notes block ──────────────────────────────────────────── */
 .notes-block {
@@ -247,7 +260,13 @@ ol.clauses li {
 .signature-block .signer .signer-name {
   font-weight: 600;
   color: #01248A;
-  margin-bottom: 8mm;
+  margin-bottom: 2mm;
+}
+/* Signature area: holds the invisible Zoho tag. Min-height reserves space
+   for the rendered signature image so it doesn't overlap the line below. */
+.signature-block .signer .sig-area {
+  min-height: 8mm;
+  padding-top: 2mm;
 }
 .signature-block .signer .signer-line {
   border-top: 0.75pt solid #333;
@@ -276,13 +295,19 @@ ol.clauses li {
   color: #444;
 }
 
-/* ── Zoho Sign signature tags — invisible to humans ────────── */
-.zoho-tags {
+/* ── Zoho Sign signature tags — sized appropriately, invisible to humans ─
+   Inline in signature blocks. White text on white background means humans
+   don't see the literal "{{S:R1*}}" string, but Zoho parses it from the PDF
+   text stream and creates a Signature field roughly the size of the tag.
+   At 16pt the resulting signature box is comfortable to read. */
+.zoho-sig-tag {
   color: white;
-  font-size: 0.1pt;
-  line-height: 0;
+  font-size: 16pt;
+  line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
+  display: inline-block;
+  user-select: none;
 }
 
 /* ── Print-specific tweaks ──────────────────────────────────── */

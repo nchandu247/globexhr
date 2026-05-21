@@ -16,27 +16,22 @@
     <img src="img/logo.png" alt="Globex Digital Solutions" class="logo">
   </div>
 
-  {# ── Letterhead meta — appears in @top-right of every page ────────────── #}
-  <div class="letterhead-meta">
-    Globex Digital Solutions Pvt. Ltd.<br>
-    3rd Floor, Plot No: 2A, 8-3-191/17<br>
-    Vengal Rao Nagar, Hyderabad – 500 038
-  </div>
-
-  {# ── Footer — runs on every page via @bottom-center ────────────────────── #}
+  {# ── Footer — runs on every page via @bottom-center
+       Now includes full address (moved here from top-right per user feedback) #}
   <div class="footer">
     <span class="company-name">Globex Digital Solutions Pvt. Ltd.</span>
-    Tel: 040-3551 1959 &nbsp;|&nbsp; hr@globexdigital.ai &nbsp;|&nbsp; www.globexdigital.ai
+    <span class="footer-address">
+      3rd Floor, Plot No: 2A, 8-3-191/17, Vengal Rao Nagar, Hyderabad – 500 038
+    </span>
+    <span class="footer-contact">
+      Tel: 040-3551 1959 &nbsp;|&nbsp; hr@globexdigital.ai &nbsp;|&nbsp; www.globexdigital.ai
+    </span>
   </div>
 
   {# ── Main content area ─────────────────────────────────────────────────── #}
   <main>
     {% block body %}{% endblock %}
   </main>
-
-  {# ── Zoho Sign text tags — invisible to humans, parsed by Zoho ────────── #}
-  {# {% raw %} ensures Jinja doesn't try to evaluate {{S:R1*}} as variables. #}
-  <div class="zoho-tags">{% raw %}{{S:R1*}}                    {{S:R2*}}{% endraw %}</div>
 
 </body>
 </html>

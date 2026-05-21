@@ -156,12 +156,20 @@
 <div class="signature-block">
   <div class="signer">
     <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      {# Zoho Sign tag — invisible white text at 16pt creates the signature field.
+         {% raw %} prevents Jinja from trying to evaluate {{S:R1*}} as a variable. #}
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
     <div class="signer-line">
       <span class="signer-label">Authorised Signatory</span>
     </div>
   </div>
   <div class="signer">
-    <p class="signer-name">&nbsp;</p>
+    <p class="signer-name">{{ candidate_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
     <div class="signer-line">
       <span class="signer-label">Employee Signature</span>
     </div>
@@ -172,22 +180,12 @@
 <h2 class="break-before">Annexure A — Salary Breakup</h2>
 
 <div class="salary-meta">
-  <div class="row">
-    <span class="label">Employee:</span>
-    <span>{{ candidate_name }}</span>
-  </div>
-  <div class="row">
-    <span class="label">Band / Designation:</span>
-    <span>{{ band }}{% if band %} — {% endif %}{{ designation }}</span>
-  </div>
-  <div class="row">
-    <span class="label">Effective Date:</span>
-    <span>{{ date_of_joining }}</span>
-  </div>
-  <div class="row">
-    <span class="label">Issue Date:</span>
-    <span>{{ offer_date }}</span>
-  </div>
+  <dl>
+    <dt>Employee:</dt>            <dd>{{ candidate_name }}</dd>
+    <dt>Band / Designation:</dt>  <dd>{{ band }}{% if band %} — {% endif %}{{ designation }}</dd>
+    <dt>Effective Date:</dt>      <dd>{{ date_of_joining }}</dd>
+    <dt>Issue Date:</dt>          <dd>{{ offer_date }}</dd>
+  </dl>
 </div>
 
 <table class="salary-breakup">
@@ -254,6 +252,11 @@
 <div class="signature-block">
   <div class="signer">
     <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      {# Second Zoho tag for signer 1 — final legal acceptance signature.
+         Multiple {{S:R1*}} tags = multiple fields; Zoho auto-applies signature to all. #}
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
     <div class="signer-line">
       <span class="signer-label">Authorised Signatory</span><br>
       <span class="muted">Date: {{ offer_date }}</span>
@@ -261,6 +264,9 @@
   </div>
   <div class="signer">
     <p class="signer-name">{{ candidate_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
     <div class="signer-line">
       <span class="signer-label">Name &amp; Signature</span><br>
       <span class="muted">Date:</span>
