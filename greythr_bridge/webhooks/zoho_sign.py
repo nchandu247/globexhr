@@ -70,15 +70,25 @@ def callback():
         # ── 5. Dispatch — all real work is enqueued ────────────────────────────
         if operation_type == "RequestCompleted":
             if letter_type == "offer_letter" and docname:
-                frappe.enqueue(
-                    "greythr_bridge.tasks.push_new_joiner.run",
-                    queue="short",
-                    offer_name=docname,
-                    request_id=request_id,
+                # Update Job Offer status + signed timestamp atomically.
+                # Status field uses values: "Awaiting Response" (default),
+                # "Accepted", "Rejected". Setting to "Accepted" lets HR see
+                # the signing is complete without checking Zoho.
+                frappe.db.set_value(
+                    "Job Offer", docname, "status", "Accepted"
                 )
                 frappe.db.set_value(
                     "Job Offer", docname, "custom_zoho_sign_signed_at",
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+                # Download the fully-signed PDF from Zoho and attach to the
+                # Job Offer as a File record. Done in background so webhook
+                # response stays under 5 seconds.
+                frappe.enqueue(
+                    "greythr_bridge.webhooks.zoho_sign._download_and_attach_signed_pdf",
+                    queue="short",
+                    docname=docname,
+                    request_id=request_id,
                 )
 
         elif operation_type in ("RequestDeclined", "RequestCancelled") and docname:
@@ -111,9 +121,10 @@ def callback():
 # ── background handlers ───────────────────────────────────────────────────────
 
 def _handle_declined(docname: str, operation_type: str) -> None:
-    """Mark Job Offer as declined and notify HR Manager."""
+    """Mark Job Offer as Rejected and notify HR Manager."""
     try:
-        frappe.db.set_value("Job Offer", docname, "status", "Cancelled")
+        # Frappe HR Job Offer.status values: Awaiting Response, Accepted, Rejected
+        frappe.db.set_value("Job Offer", docname, "status", "Rejected")
         _notify_hr(
             docname,
             f"Signing {operation_type.replace('Request', '')} for {docname}. "
@@ -124,6 +135,89 @@ def _handle_declined(docname: str, operation_type: str) -> None:
             f"_handle_declined: {docname} error={str(exc)[:200]}",
             "greytHR Webhook Error",
         )
+
+
+def _download_and_attach_signed_pdf(docname: str, request_id: str) -> None:
+    """
+    Background: download the fully-signed PDF from Zoho Sign and attach it
+    as a File against the Job Offer record.
+
+    Called from the on-RequestCompleted webhook path. The signed PDF is the
+    legally-binding artifact we need to retain regardless of whether Zoho
+    Sign data is retained long-term.
+    """
+    try:
+        from ..api.zoho_sign import get_signed_document
+
+        pdf_bytes = get_signed_document(request_id)
+        if not pdf_bytes:
+            log_error(
+                f"_download_and_attach_signed_pdf: {docname} got empty PDF",
+                "greytHR Webhook Error",
+            )
+            return
+
+        # Save the PDF as a Frappe File attached to the Job Offer
+        file_doc = frappe.get_doc({
+            "doctype": "File",
+            "file_name": f"Offer Letter - Signed - {docname}.pdf",
+            "attached_to_doctype": "Job Offer",
+            "attached_to_name": docname,
+            "content": pdf_bytes,
+            "is_private": 1,
+        })
+        file_doc.insert(ignore_permissions=True)
+        frappe.db.set_value(
+            "Job Offer", docname, "custom_signed_pdf_pushed", 1
+        )
+    except Exception as exc:
+        log_error(
+            f"_download_and_attach_signed_pdf: {docname} error={str(exc)[:200]}",
+            "greytHR Webhook Error",
+        )
+
+
+@frappe.whitelist()
+def force_complete_offer(offer_name: str) -> dict:
+    """
+    System-Manager-only endpoint to manually finalise a Job Offer where the
+    webhook either didn't fire or fired against an older code path that
+    never updated the Status field.
+
+    What it does (idempotent):
+      1. Sets Job Offer.status = "Accepted"
+      2. Sets custom_zoho_sign_signed_at = now (if not already set)
+      3. Downloads + attaches the signed PDF from Zoho (if request_id present)
+
+    Use this once per stranded offer (Rajesh, Bhuvan, Rajyalakshmi).
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Only System Manager can force-complete offers.")
+
+    offer = frappe.get_doc("Job Offer", offer_name)
+    request_id = getattr(offer, "custom_zoho_sign_request_id", None)
+
+    frappe.db.set_value("Job Offer", offer_name, "status", "Accepted")
+    if not getattr(offer, "custom_zoho_sign_signed_at", None):
+        frappe.db.set_value(
+            "Job Offer", offer_name, "custom_zoho_sign_signed_at",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
+    if request_id:
+        frappe.enqueue(
+            "greythr_bridge.webhooks.zoho_sign._download_and_attach_signed_pdf",
+            queue="short",
+            docname=offer_name,
+            request_id=request_id,
+        )
+
+    return {
+        "status": "completed",
+        "offer_name": offer_name,
+        "request_id": request_id,
+        "signed_pdf_enqueued": bool(request_id),
+    }
 
 
 def _handle_expired(docname: str) -> None:

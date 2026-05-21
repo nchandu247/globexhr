@@ -15,6 +15,10 @@ import pytest
 # ── 1. Mock frappe and submodules ─────────────────────────────────────────────
 frappe_mock = MagicMock()
 frappe_mock.logger.return_value = MagicMock()
+# @frappe.whitelist() decorator: make it an identity decorator in tests
+# so the decorated function still callable. Without this, decorated functions
+# become MagicMock and tests can't invoke them.
+frappe_mock.whitelist = lambda *args, **kwargs: (lambda f: f)
 sys.modules.setdefault("frappe", frappe_mock)
 
 # Mock frappe submodules so `from frappe.utils.password import ...` works in tests

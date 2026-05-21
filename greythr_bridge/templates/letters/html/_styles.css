@@ -184,7 +184,7 @@ table.salary-breakup tr.total td {
   font-size: 11pt;
 }
 
-/* ── Salary meta info block above table (proper key-value grid) ─ */
+/* ── Salary meta info block above table (proper key-value table) ─ */
 .salary-meta {
   font-size: 10pt;
   margin-bottom: 2mm;
@@ -192,25 +192,21 @@ table.salary-breakup tr.total td {
   border-left: 3pt solid #01248A;
   padding: 3mm 4mm;
 }
-.salary-meta dl {
-  display: table;       /* gives consistent column widths */
+.salary-meta-table {
+  border-collapse: collapse;
   width: auto;
-  border-spacing: 0 0.5mm;
 }
-.salary-meta dt,
-.salary-meta dd {
-  display: table-cell;
-  padding: 0.4mm 0;
-  vertical-align: baseline;
-}
-.salary-meta dt {
+.salary-meta-table th {
   font-weight: 600;
   color: #444;
-  padding-right: 8mm;
-  width: 40mm;          /* fixed column width = column alignment */
+  text-align: left;
+  vertical-align: baseline;
+  padding: 0.6mm 8mm 0.6mm 0;
   white-space: nowrap;
 }
-.salary-meta dd {
+.salary-meta-table td {
+  vertical-align: baseline;
+  padding: 0.6mm 0;
   color: #1a1a1a;
 }
 
@@ -296,12 +292,18 @@ ol.clauses li {
 }
 
 /* ── Zoho Sign signature tags — sized appropriately, invisible to humans ─
-   Inline in signature blocks. White text on white background means humans
-   don't see the literal "{{S:R1*}}" string, but Zoho parses it from the PDF
-   text stream and creates a Signature field roughly the size of the tag.
-   At 16pt the resulting signature box is comfortable to read. */
+   Inline in signature blocks. The tag text is still present in the PDF
+   content stream (so Zoho parses it and creates a Signature field at this
+   position) but is rendered invisible to humans.
+
+   Why color:transparent + opacity:0 instead of just color:white?
+   Earlier attempts with color:white still showed the {{S:R1*}} text as
+   visible black text in the Zoho-processed PDF. Belt-and-suspenders:
+   transparent color AND zero opacity should make this impossible to render
+   as visible text. !important guards against CSS specificity surprises. */
 .zoho-sig-tag {
-  color: white;
+  color: transparent !important;
+  opacity: 0 !important;
   font-size: 16pt;
   line-height: 1;
   letter-spacing: 0;

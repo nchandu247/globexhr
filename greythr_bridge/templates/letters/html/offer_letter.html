@@ -180,12 +180,12 @@
 <h2 class="break-before">Annexure A — Salary Breakup</h2>
 
 <div class="salary-meta">
-  <dl>
-    <dt>Employee:</dt>            <dd>{{ candidate_name }}</dd>
-    <dt>Band / Designation:</dt>  <dd>{{ band }}{% if band %} — {% endif %}{{ designation }}</dd>
-    <dt>Effective Date:</dt>      <dd>{{ date_of_joining }}</dd>
-    <dt>Issue Date:</dt>          <dd>{{ offer_date }}</dd>
-  </dl>
+  <table class="salary-meta-table">
+    <tr><th>Employee:</th>            <td>{{ candidate_name }}</td></tr>
+    <tr><th>Band / Designation:</th>  <td>{{ band }}{% if band %} — {% endif %}{{ designation }}</td></tr>
+    <tr><th>Effective Date:</th>      <td>{{ date_of_joining }}</td></tr>
+    <tr><th>Issue Date:</th>          <td>{{ offer_date }}</td></tr>
+  </table>
 </div>
 
 <table class="salary-breakup">
