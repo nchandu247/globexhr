@@ -241,7 +241,6 @@ class TestAppendZohoSignatureTags(unittest.TestCase):
         from docx import Document
         from greythr_bridge.letters.merger import _append_zoho_signature_tags
 
-        # Create a fresh empty DOCX
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -251,7 +250,6 @@ class TestAppendZohoSignatureTags(unittest.TestCase):
 
             _append_zoho_signature_tags(tmp_path)
 
-            # Reopen and verify tags are present
             result = Document(tmp_path)
             all_text = "\n".join(p.text for p in result.paragraphs)
             self.assertIn("{{S:R1*}}", all_text,
@@ -262,6 +260,161 @@ class TestAppendZohoSignatureTags(unittest.TestCase):
                           "Original content was destroyed")
         finally:
             os.unlink(tmp_path)
+
+    def test_signature_tags_are_white_invisible(self):
+        """
+        Regression: tags were visible in black 8pt in the first signed PDF.
+        Should now be white = invisible on white page (Zoho still parses text).
+        """
+        import tempfile
+        from docx import Document
+        from docx.shared import RGBColor
+        from greythr_bridge.letters.merger import _append_zoho_signature_tags
+
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            doc = Document()
+            doc.save(tmp_path)
+            _append_zoho_signature_tags(tmp_path)
+
+            result = Document(tmp_path)
+            # Find the paragraph containing the tags
+            tag_para = None
+            for p in result.paragraphs:
+                if "{{S:R1*}}" in p.text:
+                    tag_para = p
+                    break
+            self.assertIsNotNone(tag_para, "Tag paragraph not found")
+            self.assertTrue(len(tag_para.runs) > 0, "Tag paragraph has no runs")
+            color = tag_para.runs[0].font.color.rgb
+            self.assertEqual(
+                color, RGBColor(0xFF, 0xFF, 0xFF),
+                f"Expected white (FFFFFF), got {color}",
+            )
+        finally:
+            os.unlink(tmp_path)
+
+
+class TestOfferContextDateOfJoining(unittest.TestCase):
+    """Verify build_offer_context picks up custom_date_of_joining correctly."""
+
+    def test_doj_truthy_when_set(self):
+        """When DOJ is set on the doc, context's date_of_joining is non-empty."""
+        ctx = build_offer_context(FakeDoc())
+        # Note: actual format depends on frappe.utils.formatdate (not under test).
+        # We just verify the field flows through to the context.
+        self.assertTrue(
+            ctx["date_of_joining"],
+            "date_of_joining should be non-empty when custom_date_of_joining is set",
+        )
+
+    def test_doj_blank_when_missing(self):
+        class NoDOJDoc:
+            name = "OFR-NODOJ"
+            applicant_name = "X"
+            designation = "Y"
+            offer_date = "2025-06-01"
+            custom_annual_ctc = 600000
+            custom_basic_monthly = 21600
+            custom_hra_monthly = 10800
+            custom_conveyance_allowance_monthly = 1600
+            custom_medical_allowance_monthly = 1250
+            custom_special_allowance_monthly = 7950
+            custom_employee_pf_monthly = 1800
+            custom_employee_esi_monthly = 0
+            custom_professional_tax_monthly = 200
+            custom_employer_pf = 1950
+            custom_employer_esiinsurance_monthly = 0
+            # No custom_date_of_joining attribute at all
+
+        ctx = build_offer_context(NoDOJDoc())
+        self.assertEqual(
+            ctx["date_of_joining"], "",
+            "date_of_joining should be empty string when field missing",
+        )
+
+
+class TestBuildScriptPolish(unittest.TestCase):
+    """
+    Verify the polish passes in scripts/build_offer_template.py:
+    - Fix 'Hi .{{ candidate_name }}' → 'Hi {{ candidate_name }}'
+    - Insert reporting-manager paragraph after the joining sentence
+    """
+
+    def _make_fixture_docx(self, with_hi_dot=True, with_joining=True):
+        """Create a tiny fixture DOCX containing the patterns we polish."""
+        import tempfile
+        from docx import Document
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            path = tmp.name
+        doc = Document()
+        if with_hi_dot:
+            doc.add_paragraph("Hi .{{ candidate_name }},")
+        doc.add_paragraph("Dear {{ candidate_name }},")
+        if with_joining:
+            doc.add_paragraph(
+                "We are eager for you to join us as early as possible, "
+                "ideally by {{ date_of_joining }}."
+            )
+        doc.add_paragraph("Yours sincerely,")
+        doc.save(path)
+        return path
+
+    def test_fix_hi_dot_salutation(self):
+        from docx import Document
+        # Import the build module
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "build_offer_template",
+            os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "build_offer_template.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        src = self._make_fixture_docx()
+        dst = src.replace(".docx", "_out.docx")
+        try:
+            stats = mod.build(src, dst)
+            self.assertGreaterEqual(stats["salutation_fixes"], 1,
+                                    "Expected at least 1 'Hi .' fix")
+            result = Document(dst)
+            all_text = "\n".join(p.text for p in result.paragraphs)
+            self.assertNotIn("Hi .{{", all_text, "'Hi .' pattern still present")
+            self.assertIn("Hi {{ candidate_name }}", all_text,
+                          "Fixed 'Hi ' salutation missing")
+        finally:
+            os.unlink(src)
+            if os.path.exists(dst):
+                os.unlink(dst)
+
+    def test_inject_reporting_manager_line(self):
+        from docx import Document
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "build_offer_template",
+            os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "build_offer_template.py"),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        src = self._make_fixture_docx()
+        dst = src.replace(".docx", "_out.docx")
+        try:
+            stats = mod.build(src, dst)
+            self.assertEqual(stats["reporting_manager_inserted"], 1,
+                             "Expected exactly 1 reporting-manager line")
+            result = Document(dst)
+            all_text = "\n".join(p.text for p in result.paragraphs)
+            self.assertIn("{% if reporting_to %}", all_text,
+                          "Jinja conditional missing")
+            self.assertIn("You will report to {{ reporting_to }}", all_text,
+                          "Reporting manager sentence missing")
+            self.assertIn("{% endif %}", all_text, "endif missing")
+        finally:
+            os.unlink(src)
+            if os.path.exists(dst):
+                os.unlink(dst)
 
 
 if __name__ == "__main__":

@@ -74,6 +74,16 @@ def send_offer_letter(offer_name: str, force: bool = False) -> None:
             )
             return
 
+        if not getattr(doc, "custom_date_of_joining", None):
+            log_error(
+                f"send_offer_letter: {offer_name} aborted — "
+                f"Date of Joining is empty. Set 'Date of Joining' on the "
+                f"Job Offer and resubmit. (Defense-in-depth — should also "
+                f"be enforced at form level via reqd=1 fixture.)",
+                "greytHR Offer Letter Config Error",
+            )
+            return
+
         signatory = frappe.get_doc("User", settings.default_signatory)
         if not signatory.full_name or not signatory.email:
             log_error(

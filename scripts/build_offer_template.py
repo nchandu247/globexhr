@@ -109,33 +109,175 @@ def _process_container(container) -> int:
     return total
 
 
+# ── Post-substitution polish passes ───────────────────────────────────────────
+
+def _fix_hi_dot_salutation(doc) -> int:
+    """
+    The HR source DOCX has 'Hi .{{ candidate_name }},' (literal dot before
+    the variable). Replace with 'Hi {{ candidate_name }},' across body +
+    headers + footers.
+
+    Returns number of paragraphs modified.
+    """
+    import re
+    pattern = re.compile(r"Hi\s*\.\s*(\{\{\s*candidate_name\s*\}\})")
+
+    def _fix_in_container(container) -> int:
+        n = 0
+        for para in getattr(container, "paragraphs", []):
+            if "Hi" in para.text and "candidate_name" in para.text:
+                new_text = pattern.sub(r"Hi \1", para.text)
+                if new_text != para.text and para.runs:
+                    para.runs[0].text = new_text
+                    for run in para.runs[1:]:
+                        run.text = ""
+                    n += 1
+        for table in getattr(container, "tables", []):
+            for row in table.rows:
+                for cell in row.cells:
+                    n += _fix_in_container(cell)
+        return n
+
+    count = _fix_in_container(doc)
+    for section in doc.sections:
+        count += _fix_in_container(section.header)
+        count += _fix_in_container(section.footer)
+    return count
+
+
+def _add_reporting_manager_line(doc) -> int:
+    """
+    Find the joining sentence ('...ideally by {{ date_of_joining }}...') and
+    insert a new paragraph after it with the Reporting Manager line.
+
+    Uses jinja {% if %} so the sentence is omitted entirely when the
+    custom_reporting_to field is not set.
+
+    Returns number of insertions (should be 1 if the joining sentence was found).
+    """
+    target_marker = "date_of_joining"  # the variable name appears in the joining sentence
+    inserted = 0
+
+    for i, para in enumerate(doc.paragraphs):
+        if target_marker in para.text and inserted == 0:
+            # Insert a new paragraph immediately after `para`
+            new_para = para.insert_paragraph_before()
+            # Swap: insert before puts it ABOVE. We want it BELOW para.
+            # python-docx doesn't have insert_after, so use XML manipulation:
+            from copy import deepcopy
+            new_p_xml = deepcopy(new_para._p)
+            para._p.addnext(new_p_xml)
+            # Remove the empty paragraph we inserted before
+            new_para._p.getparent().remove(new_para._p)
+
+            # Find the just-inserted paragraph (it's now after `para`)
+            from docx.text.paragraph import Paragraph
+            inserted_para = Paragraph(new_p_xml, para._parent)
+            inserted_para.add_run(
+                "{% if reporting_to %}You will report to "
+                "{{ reporting_to }} in this role.{% endif %}"
+            )
+            inserted = 1
+            break
+    return inserted
+
+
+def _dim_watermark(doc) -> int:
+    """
+    Attempt to dim the 'Globex DIGITAL' watermark behind body text.
+
+    DOCX watermarks live in the header XML as VML or DrawingML shapes.
+    python-docx doesn't expose these directly, so we use low-level XML
+    manipulation to find and adjust them. Wrapped in try/except — if this
+    fails for any reason, the watermark stays as-is and the rest of the
+    build still succeeds (non-blocking polish).
+
+    Returns number of watermark shapes dimmed (0 if none found or skipped).
+    """
+    try:
+        from lxml import etree
+        ns = {
+            "w":   "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+            "v":   "urn:schemas-microsoft-com:vml",
+            "o":   "urn:schemas-microsoft-com:office:office",
+        }
+        dimmed = 0
+        for section in doc.sections:
+            header_xml = section.header._element
+            # Find VML shapes (legacy watermark format used by Word)
+            for shape in header_xml.iter("{urn:schemas-microsoft-com:vml}shape"):
+                style = shape.get("style", "")
+                # Watermarks typically have specific style attributes; mark them faded
+                # by injecting opacity into the style attribute.
+                if "opacity" not in style:
+                    shape.set("style", style + ";opacity:.1")
+                    dimmed += 1
+                # Also try child <v:fill opacity="..."> if present
+                for fill in shape.iter("{urn:schemas-microsoft-com:vml}fill"):
+                    fill.set("opacity", "0.1")
+        return dimmed
+    except Exception as e:
+        # Non-fatal — watermark stays as-is
+        print(f"WARN: watermark dim failed ({type(e).__name__}: {e}). Continuing.")
+        return 0
+
+
+# ── Build entrypoint ──────────────────────────────────────────────────────────
+
+def build(src: str, dst: str) -> dict:
+    """
+    Build the offer-letter merge template from the HR source DOCX.
+
+    Testable function — `main()` wraps this with default paths.
+    Returns a stats dict for verification:
+        { "substitutions": N, "salutation_fixes": N,
+          "reporting_manager_inserted": N, "watermark_dimmed": N }
+    """
+    if not os.path.exists(src):
+        raise FileNotFoundError(f"source template not found: {src}")
+
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    doc = Document(src)
+
+    stats = {
+        "substitutions": 0,
+        "salutation_fixes": 0,
+        "reporting_manager_inserted": 0,
+        "watermark_dimmed": 0,
+    }
+
+    # Pass 1: «...» → {{...}} substitutions + candidate_name typo fix
+    stats["substitutions"] += _process_container(doc)
+    for section in doc.sections:
+        stats["substitutions"] += _process_container(section.header)
+        stats["substitutions"] += _process_container(section.footer)
+
+    # Pass 2: polish
+    stats["salutation_fixes"] = _fix_hi_dot_salutation(doc)
+    stats["reporting_manager_inserted"] = _add_reporting_manager_line(doc)
+    stats["watermark_dimmed"] = _dim_watermark(doc)
+
+    doc.save(dst)
+    return stats
+
+
 def main():
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     src = os.path.join(
         repo_root, "templates",
         "Globex Digital Solutions _ Template _ Offer Letter.docx",
     )
-    dst_dir = os.path.join(repo_root, "greythr_bridge", "templates", "letters")
-    dst = os.path.join(dst_dir, "offer_letter.docx")
+    dst = os.path.join(repo_root, "greythr_bridge", "templates", "letters", "offer_letter.docx")
 
-    if not os.path.exists(src):
-        sys.exit(f"ERROR: source template not found: {src}")
+    try:
+        stats = build(src, dst)
+    except FileNotFoundError as e:
+        sys.exit(f"ERROR: {e}")
 
-    os.makedirs(dst_dir, exist_ok=True)
-
-    doc = Document(src)
-    total = 0
-
-    # Body
-    total += _process_container(doc)
-
-    # Headers and footers in each section
-    for section in doc.sections:
-        total += _process_container(section.header)
-        total += _process_container(section.footer)
-
-    doc.save(dst)
-    print(f"OK: substitutions applied = {total}")
+    print(f"OK: substitutions applied = {stats['substitutions']}")
+    print(f"OK: salutation fixes      = {stats['salutation_fixes']}")
+    print(f"OK: reporting mgr line    = {stats['reporting_manager_inserted']}")
+    print(f"OK: watermark dimmed      = {stats['watermark_dimmed']}")
     print(f"OK: wrote {dst}")
 
 

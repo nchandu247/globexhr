@@ -75,21 +75,22 @@ def _append_zoho_signature_tags(docx_path: str) -> None:
       {{S:R1*}}  — mandatory Signature field for recipient 1 (HR signatory)
       {{S:R2*}}  — mandatory Signature field for recipient 2 (candidate)
 
-    Zoho Sign auto-detects these tags on upload and replaces them with
-    interactive signature boxes. Tags are rendered in a small font so they
-    are visually subtle in the unsigned preview; Zoho normally hides them
-    entirely in the final signed PDF.
+    Tags are rendered in white text so they are invisible in the rendered
+    PDF (white-on-white) while Zoho still parses them from the document
+    content (Zoho reads text, not color). Verified: previous PDF showed
+    tags as visible black 8pt — this commit makes them invisible.
 
     Done as a post-processing step (not inside the template) to avoid the
     `{{ }}` syntax conflicting with docxtpl/Jinja2 expression evaluation.
     """
     from docx import Document
-    from docx.shared import Pt
+    from docx.shared import Pt, RGBColor
 
     doc = Document(docx_path)
     para = doc.add_paragraph()
     run = para.add_run("{{S:R1*}}                    {{S:R2*}}")
     run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)  # white = invisible on white page
     doc.save(docx_path)
 
 

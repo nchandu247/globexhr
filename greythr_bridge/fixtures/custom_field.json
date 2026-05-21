@@ -1,6 +1,18 @@
 [
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_date_of_joining",
+  "dt": "Job Offer",
+  "fieldname": "custom_date_of_joining",
+  "label": "Date of Joining",
+  "fieldtype": "Date",
+  "reqd": 1,
+  "insert_after": "offer_date",
+  "module": "greytHR",
+  "description": "Candidate's confirmed start date. Required — used throughout the offer letter PDF."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Job Offer-custom_band",
   "dt": "Job Offer",
   "fieldname": "custom_band",
