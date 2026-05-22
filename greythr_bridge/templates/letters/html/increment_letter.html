@@ -1,0 +1,67 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Salary Increment Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ employee_name }},</p>
+
+<div class="section">
+  <p>
+    We are pleased to inform you of a revision in your annual compensation
+    with effect from <strong>{{ effective_date }}</strong>. This revision
+    reflects your performance, contributions, and the value you bring to the
+    Globex Digital Solutions team.
+  </p>
+
+  <p>
+    Your revised compensation details are as follows:
+  </p>
+</div>
+
+<table class="salary-breakup">
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th class="numeric">Amount (&#8377;)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Previous Annual CTC</td><td class="numeric">{{ old_annual_ctc }}</td></tr>
+    <tr><td>Increment Amount</td><td class="numeric">{{ increment_amount }}</td></tr>
+    <tr><td>Increment %</td><td class="numeric">{{ increment_percent }}</td></tr>
+    <tr class="total"><td>Revised Annual CTC</td><td class="numeric">{{ new_annual_ctc }}</td></tr>
+  </tbody>
+</table>
+
+<p>
+  All other terms and conditions of your employment remain unchanged. The
+  detailed monthly salary breakup as per the new compensation will be
+  reflected in your payslip from the effective date.
+</p>
+
+<p>
+  We sincerely appreciate your contributions and look forward to your
+  continued commitment to the organisation's success.
+</p>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries regarding this letter, please contact us at
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

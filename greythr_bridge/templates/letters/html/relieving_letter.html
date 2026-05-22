@@ -1,0 +1,56 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Relieving Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">To Whom It May Concern,</p>
+
+<div class="section">
+  <p>
+    This is to confirm that <strong>{{ employee_name }}</strong>,
+    {{ designation }}, has been relieved from the services of Globex Digital
+    Solutions Pvt Ltd with effect from the close of business hours on
+    <strong>{{ last_working_day }}</strong>.
+  </p>
+
+  <p>
+    {{ employee_name }} joined Globex Digital Solutions on
+    <strong>{{ date_of_joining }}</strong>{% if tenure %} and served the
+    organisation for a total tenure of <strong>{{ tenure }}</strong>{% endif %}.
+  </p>
+
+  <p>
+    All exit formalities, including handover of responsibilities, return of
+    company assets, and clearance from all relevant departments, have been
+    duly completed. There are no outstanding dues or obligations between
+    {{ employee_name }} and Globex Digital Solutions Pvt Ltd as of the date
+    of this letter.
+  </p>
+
+  <p>
+    We thank {{ employee_name }} for the contributions made during their
+    tenure and wish them success in all future endeavours.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For verification of this letter, please contact
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

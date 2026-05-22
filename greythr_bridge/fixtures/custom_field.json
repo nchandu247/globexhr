@@ -110,5 +110,155 @@
   "insert_after": "custom_variable_pay_annual",
   "module": "greytHR",
   "description": "Last date by which candidate must accept the offer."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_offer_type",
+  "dt": "Job Offer",
+  "fieldname": "custom_offer_type",
+  "label": "Offer Type",
+  "fieldtype": "Select",
+  "options": "Full-time\nConsultant\nIntern",
+  "default": "Full-time",
+  "insert_after": "designation",
+  "module": "greytHR",
+  "description": "Determines which offer letter template is used. Full-time = standard offer (with salary table). Consultant = engagement letter. Intern = internship offer with stipend."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_engagement_duration_months",
+  "dt": "Job Offer",
+  "fieldname": "custom_engagement_duration_months",
+  "label": "Engagement Duration (Months)",
+  "fieldtype": "Int",
+  "insert_after": "custom_offer_type",
+  "depends_on": "eval:doc.custom_offer_type=='Consultant'",
+  "module": "greytHR",
+  "description": "Consultant engagement length in months. Used in Consultant Offer Letter."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_professional_fees_monthly",
+  "dt": "Job Offer",
+  "fieldname": "custom_professional_fees_monthly",
+  "label": "Professional Fees (Monthly)",
+  "fieldtype": "Currency",
+  "insert_after": "custom_engagement_duration_months",
+  "depends_on": "eval:doc.custom_offer_type=='Consultant'",
+  "module": "greytHR",
+  "description": "Consultant monthly retainer (excludes GST)."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_stipend_monthly",
+  "dt": "Job Offer",
+  "fieldname": "custom_stipend_monthly",
+  "label": "Stipend (Monthly)",
+  "fieldtype": "Currency",
+  "insert_after": "custom_professional_fees_monthly",
+  "depends_on": "eval:doc.custom_offer_type=='Intern'",
+  "module": "greytHR",
+  "description": "Intern monthly stipend amount."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_internship_duration_months",
+  "dt": "Job Offer",
+  "fieldname": "custom_internship_duration_months",
+  "label": "Internship Duration (Months)",
+  "fieldtype": "Int",
+  "insert_after": "custom_stipend_monthly",
+  "depends_on": "eval:doc.custom_offer_type=='Intern'",
+  "module": "greytHR",
+  "description": "Internship duration in months."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Salary Structure Assignment-custom_annual_ctc",
+  "dt": "Salary Structure Assignment",
+  "fieldname": "custom_annual_ctc",
+  "label": "Annual CTC",
+  "fieldtype": "Currency",
+  "insert_after": "base",
+  "module": "greytHR",
+  "description": "Annual CTC value used by Increment Letter. SSA has no native CTC field — HR fills this when creating/amending an SSA."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Salary Structure Assignment-custom_send_increment_letter",
+  "dt": "Salary Structure Assignment",
+  "fieldname": "custom_send_increment_letter",
+  "label": "Send Increment Letter",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_annual_ctc",
+  "module": "greytHR",
+  "description": "Generate and email Increment Letter on SSA submit. Uncheck for initial salary creation (not an actual increment)."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Salary Structure Assignment-custom_increment_letter_generated",
+  "dt": "Salary Structure Assignment",
+  "fieldname": "custom_increment_letter_generated",
+  "label": "Increment Letter Generated",
+  "fieldtype": "Check",
+  "default": "0",
+  "read_only": 1,
+  "insert_after": "custom_send_increment_letter",
+  "module": "greytHR",
+  "description": "Marker set automatically after Increment Letter PDF is generated and attached."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Separation-custom_send_experience_letter",
+  "dt": "Employee Separation",
+  "fieldname": "custom_send_experience_letter",
+  "label": "Send Experience Letter",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "boarding_status",
+  "module": "greytHR",
+  "description": "Generate and email Experience Letter on Separation submit."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Separation-custom_send_relieving_letter",
+  "dt": "Employee Separation",
+  "fieldname": "custom_send_relieving_letter",
+  "label": "Send Relieving Letter",
+  "fieldtype": "Check",
+  "default": "1",
+  "insert_after": "custom_send_experience_letter",
+  "module": "greytHR",
+  "description": "Generate and email Relieving Letter on Separation submit."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_promotion_letter_attached",
+  "dt": "Employee",
+  "fieldname": "custom_promotion_letter_attached",
+  "label": "Promotion Letter Attached",
+  "fieldtype": "Check",
+  "default": "0",
+  "read_only": 1,
+  "insert_after": "status",
+  "module": "greytHR",
+  "description": "Marker set automatically after Promotion Letter PDF is generated and attached."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_service_certificate_issued_at",
+  "dt": "Employee",
+  "fieldname": "custom_service_certificate_issued_at",
+  "label": "Service Certificate Last Issued",
+  "fieldtype": "Date",
+  "read_only": 1,
+  "insert_after": "custom_promotion_letter_attached",
+  "module": "greytHR",
+  "description": "Date of the most recent Service Certificate issued for this employee."
  }
 ]

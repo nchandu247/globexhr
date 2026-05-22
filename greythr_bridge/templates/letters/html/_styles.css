@@ -311,6 +311,32 @@ ol.clauses li {
   color: #444;
 }
 
+/* ── HR signature image (for PDF-only letters where HR signs via image) ─ */
+.hr-sig-block {
+  margin-top: 10mm;
+  page-break-inside: avoid;
+}
+.hr-sig-block .hr-sig-image {
+  height: 14mm;
+  width: auto;
+  margin-bottom: 1mm;
+  display: block;
+}
+.hr-sig-block .hr-sig-line {
+  border-top: 0.75pt solid #333;
+  width: 60mm;
+  padding-top: 1.5mm;
+  font-size: 9pt;
+  color: #444;
+}
+.hr-sig-block .hr-sig-label {
+  font-size: 9pt;
+  color: #666;
+}
+.hr-sig-block.no-image .hr-sig-image {
+  display: none;
+}
+
 /* ── Zoho Sign signature tags — sized appropriately, invisible to humans ─
    Inline in signature blocks. The tag text is still present in the PDF
    content stream (so Zoho parses it and creates a Signature field at this

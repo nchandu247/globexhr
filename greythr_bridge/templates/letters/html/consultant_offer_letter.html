@@ -1,0 +1,113 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Consultancy Engagement Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ offer_date }}</span>
+</div>
+
+<p class="salutation">Dear {% if title %}{{ title }} {% endif %}{{ candidate_name }},</p>
+
+<div class="section">
+  <p>
+    We are pleased to engage your professional services as
+    <strong>{{ designation }}</strong> with Globex Digital Solutions Pvt Ltd
+    (hereinafter referred to as &ldquo;GDS&rdquo;). This letter sets out the
+    terms of our consultancy engagement.
+  </p>
+
+  <p>
+    Your engagement will commence on <strong>{{ engagement_start_date }}</strong>
+    and will continue for a period of <strong>{{ engagement_duration }}</strong>,
+    unless terminated earlier in accordance with the terms below. Your primary
+    place of work will be <strong>{{ work_location }}</strong>, with the
+    flexibility for remote work as mutually agreed.
+  </p>
+
+  <p>
+    For the services rendered, GDS will pay you a professional fee of
+    <strong>&#8377; {{ professional_fees_monthly }}</strong> per month
+    (annualised: &#8377; {{ professional_fees_annual }}), payable on the 7th of
+    the following month upon submission of a valid GST-compliant invoice.
+    All applicable taxes (GST, TDS) will be handled as per Indian tax laws.
+  </p>
+</div>
+
+<h2>Nature of Engagement</h2>
+<p>
+  This is a consultancy engagement and does not constitute an employer-employee
+  relationship. You will be engaged as an independent professional and will not
+  be entitled to employee benefits such as Provident Fund, gratuity, paid leave,
+  or insurance coverage from GDS. You are responsible for your own statutory
+  compliance, including income tax and GST registration.
+</p>
+
+<h2>Confidentiality</h2>
+<p>
+  During and after this engagement, you agree to maintain strict confidentiality
+  regarding all proprietary information, business processes, client data, and
+  intellectual property of GDS. Any breach of confidentiality may result in
+  immediate termination and legal action.
+</p>
+
+<h2>Intellectual Property</h2>
+<p>
+  All work products, including but not limited to software code, designs,
+  documents, and research output, created by you during this engagement shall
+  be the sole and exclusive property of GDS.
+</p>
+
+<h2>Conflict of Interest</h2>
+<p>
+  During the term of this engagement, you agree not to engage in any business
+  activity that competes with or creates a conflict of interest with GDS or
+  its clients.
+</p>
+
+<h2>Termination</h2>
+<p>
+  Either party may terminate this engagement by providing a written notice of
+  <strong>{{ notice_period }}</strong>. GDS reserves the right to terminate the
+  engagement with immediate effect in case of breach of confidentiality, conflict
+  of interest, misrepresentation, or failure to deliver agreed services.
+</p>
+
+<h2>Acceptance</h2>
+<p>
+  Kindly signify your acceptance of the above terms by signing this document.
+  We look forward to a productive engagement.
+</p>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Authorised Signatory</span><br>
+      <span class="muted">Date: {{ offer_date }}</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ candidate_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Consultant Signature</span><br>
+      <span class="muted">Date:</span>
+    </div>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries regarding this engagement, please contact us at
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

@@ -1,0 +1,20 @@
+[
+ {
+  "doctype": "Client Script",
+  "name": "Employee — Promotion Letter Button",
+  "dt": "Employee",
+  "view": "Form",
+  "enabled": 1,
+  "module": "greytHR",
+  "script": "frappe.ui.form.on('Employee', {\n    refresh(frm) {\n        if (frm.is_new()) return;\n        const roles = frappe.user_roles || [];\n        if (!roles.includes('HR Manager') && !roles.includes('System Manager')) return;\n\n        frm.add_custom_button('Generate Promotion Letter', () => {\n            const d = new frappe.ui.Dialog({\n                title: 'Generate Promotion Letter',\n                fields: [\n                    {fieldname: 'old_designation', label: 'Previous Designation', fieldtype: 'Data', reqd: 1, default: frm.doc.designation || ''},\n                    {fieldname: 'new_designation', label: 'New Designation', fieldtype: 'Data', reqd: 1},\n                    {fieldname: 'effective_date', label: 'Effective Date', fieldtype: 'Date', reqd: 1, default: frappe.datetime.get_today()},\n                    {fieldname: 'notes', label: 'Notes (optional)', fieldtype: 'Small Text'}\n                ],\n                primary_action_label: 'Generate',\n                primary_action: (values) => {\n                    frappe.call({\n                        method: 'greythr_bridge.hooks_handlers.employee.send_promotion_letter',\n                        args: {\n                            employee_name: frm.doc.name,\n                            old_designation: values.old_designation,\n                            new_designation: values.new_designation,\n                            effective_date: values.effective_date,\n                            notes: values.notes || ''\n                        },\n                        callback: (r) => {\n                            d.hide();\n                            if (!r.exc) {\n                                frappe.show_alert({message: 'Promotion Letter generation started — check Employee attachments in ~30s.', indicator: 'green'}, 8);\n                            }\n                        }\n                    });\n                }\n            });\n            d.show();\n        }, 'Letters');\n    }\n});"
+ },
+ {
+  "doctype": "Client Script",
+  "name": "Employee — Service Certificate Button",
+  "dt": "Employee",
+  "view": "Form",
+  "enabled": 1,
+  "module": "greytHR",
+  "script": "frappe.ui.form.on('Employee', {\n    refresh(frm) {\n        if (frm.is_new()) return;\n        if (frm.doc.status !== 'Active') return;\n        const roles = frappe.user_roles || [];\n        if (!roles.includes('HR Manager') && !roles.includes('System Manager')) return;\n\n        frm.add_custom_button('Generate Service Certificate', () => {\n            frappe.confirm(\n                `Generate Service Certificate for <b>${frm.doc.employee_name}</b>?`,\n                () => {\n                    frappe.call({\n                        method: 'greythr_bridge.hooks_handlers.employee.send_service_certificate',\n                        args: {employee_name: frm.doc.name},\n                        callback: (r) => {\n                            if (!r.exc) {\n                                frappe.show_alert({message: 'Service Certificate generation started — check Employee attachments in ~30s.', indicator: 'green'}, 8);\n                            }\n                        }\n                    });\n                }\n            );\n        }, 'Letters');\n    }\n});"
+ }
+]

@@ -175,41 +175,55 @@ def merge_to_pdf(template_filename: str, context: dict) -> bytes:
             pass
 
 
+# ── Shared formatting helpers (module level — used by all context builders) ──
+
+def fmt_inr(value) -> str:
+    """Format a number in Indian comma style, no currency symbol.
+    e.g. 600000 → '6,00,000', 12345678 → '1,23,45,678'.
+    """
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return "0"
+    s = "{:.0f}".format(n)
+    if len(s) <= 3:
+        return s
+    last3, rest = s[-3:], s[:-3]
+    grouped = ""
+    while len(rest) > 2:
+        grouped = "," + rest[-2:] + grouped
+        rest = rest[:-2]
+    return rest + grouped + "," + last3
+
+
+def fmt_date(value) -> str:
+    """Format a Frappe date field as '01 June 2025'."""
+    if not value:
+        return ""
+    try:
+        import frappe.utils
+        return frappe.utils.formatdate(value, "dd MMMM yyyy")
+    except Exception:
+        return str(value)
+
+
+def today_str() -> str:
+    """Today's date as '01 June 2025'."""
+    try:
+        import frappe.utils
+        return frappe.utils.formatdate(frappe.utils.today(), "dd MMMM yyyy")
+    except Exception:
+        return ""
+
+
 def build_offer_context(doc) -> dict:
     """
     Build the Jinja2 context dict from a Job Offer document.
-    Matches the {{ variable }} placeholders expected in offer_letter.docx.
+    Matches the {{ variable }} placeholders expected in offer_letter.html.
 
     All numeric values are returned as bare strings in Indian comma format
     (e.g. '6,00,000') with NO currency symbol — the template adds '₹' where needed.
     """
-    def fmt_inr(value) -> str:
-        """Format a number in Indian comma style, no currency symbol.
-        e.g. 600000 → '6,00,000', 12345678 → '1,23,45,678'.
-        """
-        try:
-            n = float(value or 0)
-        except (TypeError, ValueError):
-            return "0"
-        s = "{:.0f}".format(n)
-        if len(s) <= 3:
-            return s
-        last3, rest = s[-3:], s[:-3]
-        grouped = ""
-        while len(rest) > 2:
-            grouped = "," + rest[-2:] + grouped
-            rest = rest[:-2]
-        return rest + grouped + "," + last3
-
-    def fmt_date(value) -> str:
-        """Format a Frappe date field as '01 June 2025'."""
-        if not value:
-            return ""
-        try:
-            import frappe.utils
-            return frappe.utils.formatdate(value, "dd MMMM yyyy")
-        except Exception:
-            return str(value)
 
     # ── Salary components ─────────────────────────────────────────────────────
     basic   = doc.custom_basic_monthly or 0
@@ -250,12 +264,7 @@ def build_offer_context(doc) -> dict:
     # ── Annual / total derived values for Annexure A ──────────────────────────
     total_deductions_monthly = emp_pf + emp_esi + pt
     employer_total_monthly   = er_pf + er_esi + med_ins_monthly
-    today_str = ""
-    try:
-        import frappe.utils
-        today_str = frappe.utils.formatdate(frappe.utils.today(), "dd MMMM yyyy")
-    except Exception:
-        pass
+    today_str_value = today_str()
 
     # ── Reporting manager resolution (Link → Employee name lookup) ────────────
     reporting_to_raw  = getattr(doc, "custom_reporting_to", None) or ""
@@ -313,7 +322,7 @@ def build_offer_context(doc) -> dict:
         "joining_bonus":       fmt_inr(joining_bonus_raw),
         "variable_pay_annual": fmt_inr(variable_pay_raw),
         "band":                band,
-        "current_date":        today_str,
+        "current_date":        today_str_value,
 
         # ── CTC summary ────────────────────────────────────────────────────────
         "annual_ctc":          fmt_inr(annual_ctc),
@@ -369,6 +378,251 @@ def build_offer_context(doc) -> dict:
         "joining_bonus_raw":       joining_bonus_raw,
         "variable_pay_annual_raw": variable_pay_raw,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase B context builders — 6 new letter types
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _resolve_signatory_name() -> str:
+    """Get the configured HR signatory's full name from greytHR Settings."""
+    try:
+        import frappe
+        settings = frappe.get_single("greytHR Settings")
+        user_id = getattr(settings, "default_signatory", None)
+        if user_id:
+            return frappe.db.get_value("User", user_id, "full_name") or ""
+    except Exception:
+        pass
+    return "Authorised Signatory"
+
+
+def _resolve_employee_email(employee_doc, prefer_personal: bool = False) -> str:
+    """Same fallback chain as non_signing._resolve_email but standalone."""
+    company = getattr(employee_doc, "company_email", None) or None
+    personal = getattr(employee_doc, "personal_email", None) or None
+    return (personal or company) if prefer_personal else (company or personal) or ""
+
+
+def build_consultant_offer_context(doc) -> dict:
+    """
+    Context for Consultant Offer Letter.
+
+    INDEPENDENT of build_offer_context — consultants don't have salary/PF/ESI
+    fields. Reads doc.custom_offer_type==Consultant fields.
+    """
+    duration = getattr(doc, "custom_engagement_duration_months", None) or 0
+    fees     = getattr(doc, "custom_professional_fees_monthly", None) or 0
+
+    return {
+        "ref_number":              doc.name,
+        "offer_date":              fmt_date(doc.offer_date),
+        "title":                   getattr(doc, "custom_title", None) or "",
+        "candidate_name":          doc.applicant_name or "",
+        "designation":             doc.designation or "",
+        "engagement_start_date":   fmt_date(getattr(doc, "custom_date_of_joining", None)),
+        "engagement_duration":     f"{duration} months" if duration else "",
+        "professional_fees_monthly":  fmt_inr(fees),
+        "professional_fees_annual":   fmt_inr(fees * 12),
+        "work_location":           getattr(doc, "custom_work_location", None) or "Hyderabad",
+        "notice_period":           getattr(doc, "custom_notice_period", None) or "30 days",
+        "current_date":            today_str(),
+    }
+
+
+def build_intern_offer_context(doc) -> dict:
+    """
+    Context for Intern Offer Letter.
+
+    INDEPENDENT of build_offer_context — interns have stipend not salary.
+    """
+    duration = getattr(doc, "custom_internship_duration_months", None) or 0
+    stipend  = getattr(doc, "custom_stipend_monthly", None) or 0
+
+    # Resolve reporting manager (Link → Employee name lookup)
+    reporting_to_raw  = getattr(doc, "custom_reporting_to", None) or ""
+    reporting_to_name = reporting_to_raw
+    if reporting_to_raw:
+        try:
+            import frappe
+            name = frappe.db.get_value("Employee", reporting_to_raw, "employee_name")
+            if name:
+                reporting_to_name = name
+        except Exception:
+            pass
+
+    return {
+        "ref_number":              doc.name,
+        "offer_date":              fmt_date(doc.offer_date),
+        "title":                   getattr(doc, "custom_title", None) or "",
+        "candidate_name":          doc.applicant_name or "",
+        "designation":             doc.designation or "Intern",
+        "internship_start_date":   fmt_date(getattr(doc, "custom_date_of_joining", None)),
+        "internship_duration":     f"{duration} months" if duration else "",
+        "stipend_monthly":         fmt_inr(stipend),
+        "stipend_total":           fmt_inr(stipend * duration) if duration else "",
+        "work_location":           getattr(doc, "custom_work_location", None) or "Hyderabad",
+        "reporting_to":            reporting_to_name,
+        "current_date":            today_str(),
+    }
+
+
+def build_increment_context(ssa_doc) -> dict:
+    """
+    Context for Increment Letter.
+
+    Reads new CTC from ssa_doc.custom_annual_ctc and old CTC from the
+    previously-active SSA for the same employee.
+    """
+    import frappe
+    employee_id = ssa_doc.employee
+    employee = frappe.get_doc("Employee", employee_id) if employee_id else None
+
+    new_ctc = getattr(ssa_doc, "custom_annual_ctc", None) or 0
+    new_ctc = float(new_ctc) if new_ctc else 0
+
+    # Find previous active SSA for this employee
+    old_ctc = 0
+    previous_ssa_name = ""
+    try:
+        rows = frappe.get_all(
+            "Salary Structure Assignment",
+            filters={"employee": employee_id, "docstatus": 1,
+                     "name": ["!=", ssa_doc.name]},
+            fields=["name", "custom_annual_ctc", "from_date"],
+            order_by="from_date desc",
+            limit=1,
+        )
+        if rows:
+            previous_ssa_name = rows[0].name
+            old_ctc = float(rows[0].custom_annual_ctc or 0)
+    except Exception:
+        pass
+
+    delta = new_ctc - old_ctc
+    pct = (delta / old_ctc * 100) if old_ctc else 0
+
+    employee_name = getattr(employee, "employee_name", "") if employee else ""
+    designation = getattr(employee, "designation", "") if employee else ""
+
+    return {
+        "ref_number":        ssa_doc.name,
+        "current_date":      today_str(),
+        "employee_name":     employee_name,
+        "designation":       designation,
+        "old_annual_ctc":    fmt_inr(old_ctc) if old_ctc else "—",
+        "new_annual_ctc":    fmt_inr(new_ctc),
+        "increment_amount":  fmt_inr(delta) if delta > 0 else "—",
+        "increment_percent": f"{pct:.1f}%" if pct > 0 else "—",
+        "effective_date":    fmt_date(getattr(ssa_doc, "from_date", None)),
+        "previous_ssa":      previous_ssa_name,
+        "signatory_name":    _resolve_signatory_name(),
+    }
+
+
+def build_promotion_context(emp_doc, old_designation: str, new_designation: str,
+                             effective_date, notes: str = "") -> dict:
+    """
+    Context for Promotion Letter.
+
+    Args supplied by HR via dialog (button click).
+    """
+    return {
+        "ref_number":        emp_doc.name,
+        "current_date":      today_str(),
+        "employee_name":     getattr(emp_doc, "employee_name", "") or "",
+        "title":             "",  # Promotion letters typically don't use Mr./Ms.
+        "old_designation":   old_designation or "",
+        "new_designation":   new_designation or "",
+        "effective_date":    fmt_date(effective_date),
+        "notes":             notes or "",
+        "signatory_name":    _resolve_signatory_name(),
+    }
+
+
+def build_experience_context(separation_doc) -> dict:
+    """Context for Experience Letter (issued on Employee Separation)."""
+    import frappe
+    employee = frappe.get_doc("Employee", separation_doc.employee) if separation_doc.employee else None
+
+    if employee:
+        date_of_joining = getattr(employee, "date_of_joining", None)
+        last_working_day = getattr(separation_doc, "relieving_date", None) or \
+                           getattr(separation_doc, "boarding_end_date", None)
+        return {
+            "ref_number":         separation_doc.name,
+            "current_date":       today_str(),
+            "employee_name":      getattr(employee, "employee_name", "") or "",
+            "designation":        getattr(employee, "designation", "") or "",
+            "date_of_joining":    fmt_date(date_of_joining),
+            "last_working_day":   fmt_date(last_working_day),
+            "tenure":             _tenure(date_of_joining, last_working_day),
+            "signatory_name":     _resolve_signatory_name(),
+        }
+    return {
+        "ref_number":     separation_doc.name,
+        "current_date":   today_str(),
+        "employee_name":  "",
+        "designation":    "",
+        "date_of_joining": "",
+        "last_working_day": "",
+        "tenure":         "",
+        "signatory_name": _resolve_signatory_name(),
+    }
+
+
+def build_relieving_context(separation_doc) -> dict:
+    """Context for Relieving Letter — same shape as Experience but used for
+    a different document and slightly different content."""
+    return build_experience_context(separation_doc)
+
+
+def build_service_certificate_context(emp_doc) -> dict:
+    """Context for Service Certificate (current employee, mid-employment)."""
+    date_of_joining = getattr(emp_doc, "date_of_joining", None)
+    return {
+        "ref_number":      emp_doc.name,
+        "current_date":    today_str(),
+        "employee_name":   getattr(emp_doc, "employee_name", "") or "",
+        "designation":     getattr(emp_doc, "designation", "") or "",
+        "date_of_joining": fmt_date(date_of_joining),
+        "tenure_so_far":   _tenure(date_of_joining, None),  # None = up to today
+        "signatory_name":  _resolve_signatory_name(),
+    }
+
+
+def _tenure(start_date, end_date) -> str:
+    """Compute human-readable tenure: '2 years and 3 months'.
+    end_date=None means up to today.
+    """
+    if not start_date:
+        return ""
+    try:
+        from datetime import date, datetime
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        if end_date is None:
+            end_date = date.today()
+        elif isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        years = end_date.year - start_date.year
+        months = end_date.month - start_date.month
+        if end_date.day < start_date.day:
+            months -= 1
+        if months < 0:
+            years -= 1
+            months += 12
+
+        parts = []
+        if years > 0:
+            parts.append(f"{years} year{'s' if years != 1 else ''}")
+        if months > 0:
+            parts.append(f"{months} month{'s' if months != 1 else ''}")
+        return " and ".join(parts) if parts else "less than a month"
+    except Exception:
+        return ""
 
 
 # ── Bench-callable smoke tests ───────────────────────────────────────────────

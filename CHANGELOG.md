@@ -215,3 +215,69 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
   Smoke-tested: docxtpl renders cleanly, all sample values appear in output.
 - ⬜ **End-to-end test on live site:** Submit a Job Offer → PDF generates
   via LibreOffice headless → sent to Zoho Sign.
+
+---
+
+## [Unreleased] — Phase B (2026-05-22)
+
+### Phase B — Seven additional letter types (HTML+WeasyPrint, all-in-one deploy)
+
+Builds on the Phase A offer-letter pipeline. Two letter families:
+
+- **Zoho-signed** (uploaded to Zoho Sign with embedded text tags): Consultant Offer, Intern Offer
+- **PDF-only** (rendered + attached + emailed, no signature flow): Increment, Promotion, Experience, Relieving, Service Certificate
+
+#### Custom fields (12 new, fixtures auto-installed on `bench migrate`)
+
+- **Job Offer:** `custom_offer_type` (Select: Employee/Consultant/Intern), `custom_engagement_duration_months`, `custom_professional_fees_monthly`, `custom_stipend_monthly`, `custom_internship_duration_months`
+- **Salary Structure Assignment:** `custom_annual_ctc`, `custom_send_increment_letter`, `custom_increment_letter_generated`
+- **Employee Separation:** `custom_send_experience_letter`, `custom_send_relieving_letter`
+- **Employee:** `custom_promotion_letter_attached`, `custom_service_certificate_issued_at`
+
+#### Shared infrastructure
+
+- `letters/non_signing.py` — `generate_and_deliver()`: render PDF via `merge_to_pdf_via_html`, attach as private File, email with fallback chain (company → personal, reversed for separation letters)
+- `letters/dispatch.py` — `dispatch_offer_letter(doc)` selects template + context builder from `custom_offer_type`
+- `letters/merger.py` — 6 new context builders (`build_consultant_offer_context`, `build_intern_offer_context`, `build_increment_context`, `build_promotion_context`, `build_experience_context`/`build_relieving_context`, `build_service_certificate_context`) + helpers (`_resolve_signatory_name`, `_resolve_employee_email`, `_tenure`)
+- `letters/pdf_check.py` — extended with `hr_signature_image_*` health-check fields
+- `templates/letters/html/_styles.css` — `.hr-sig-block / .hr-sig-image / .hr-sig-line / .hr-sig-label` classes for non-signing letters
+- `templates/letters/html/img/hr_signature.png` — HR signatory image embedded into PDF-only letters
+
+#### Document event handlers / manual triggers
+
+- `hooks.py` — added `doc_events` for `Salary Structure Assignment` (on_submit) and `Employee Separation` (on_submit); added `Client Script` to fixtures filter; added `Employee Separation` to Custom Field fixtures
+- `hooks_handlers/salary_structure_assignment.py` — `on_ssa_submitted` enqueues `send_increment_letter` background job (skip if no prior SSA or no CTC delta)
+- `hooks_handlers/employee_separation.py` — `on_separation_submitted` enqueues `send_experience_letter` and/or `send_relieving_letter` based on the two checkboxes; both emails prefer `personal_email` (company email may already be deactivated)
+- `hooks_handlers/employee.py` — whitelisted `send_promotion_letter()` + `send_service_certificate()` (HR/System Manager only, Active-status check on service cert), both run as background jobs
+- `hooks_handlers/job_offer.py` — `_generate_document()` now uses `dispatch_offer_letter(doc)` (instead of hardcoded `offer_letter.html`)
+
+#### Client Scripts (fixtures, auto-installed)
+
+- `fixtures/client_script.json` — two scripts under the "Letters" button group on the Employee form:
+  - "Generate Promotion Letter" — dialog asks old/new designation + effective date + optional notes
+  - "Generate Service Certificate" — confirm dialog only; restricted to Active employees
+  - Both gated by `frappe.user_roles.includes('HR Manager' || 'System Manager')`
+
+#### Templates (7 new, all extend `_base.html` with brand watermark + letterhead)
+
+- `consultant_offer_letter.html` — engagement language (not employment), GST clause, IP clause, two Zoho Sign tags
+- `intern_offer_letter.html` — stipend (not salary), learning objectives, certificate-of-completion promise, two Zoho Sign tags
+- `increment_letter.html` — old-vs-new CTC comparison table, embedded HR signature image
+- `promotion_letter.html` — old → new designation, effective date, optional manager notes
+- `experience_letter.html` — "To Whom It May Concern", tenure (`X years and Y months`), conduct certification
+- `relieving_letter.html` — confirmation of relieving + clearance status
+- `service_certificate.html` — current-employment confirmation with tenure-so-far
+
+#### Tests
+
+- `tests/test_letters.py` extended from 89 → 114 passing (3 skipped). Added:
+  - `_FakeJobOfferConsultant`, `_FakeJobOfferIntern` fixtures
+  - `TestConsultantOfferContext` (2 tests), `TestInternOfferContext` (2 tests)
+  - `TestDispatcher` (4 tests — Employee/Consultant/Intern/missing-field routing)
+  - `TestPhaseBHTMLRendering` (7 tests — one per template, render via Jinja2 with StrictUndefined)
+  - `TestTenureCalculation` (4 tests — same year, multi-year, partial month, less-than-a-month)
+  - `TestPhaseBCustomFields` (1 test verifying all 12 new fields present in `fixtures/custom_field.json`)
+
+- Local smoke test: rendered all 7 templates outside Frappe with realistic contexts — all parsed cleanly, no undefined variables.
+
+- ⬜ **End-to-end test on live site (post-deploy):** Verify each of the 7 letter types end-to-end — fetch + bench update + migrate, then trigger each flow and confirm PDF/attachment/email.

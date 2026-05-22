@@ -8,7 +8,8 @@ import time
 
 import frappe
 from ..api.zoho_sign import send_for_signature, submit_request
-from ..letters.merger import build_offer_context, merge_to_pdf_via_html
+from ..letters.merger import merge_to_pdf_via_html
+from ..letters.dispatch import dispatch_offer_letter
 from ..utils.logging import log_error
 
 
@@ -205,12 +206,14 @@ def _get_applicant_email(offer_doc) -> str | None:
 
 def _generate_document(doc) -> bytes | None:
     """
-    Render the offer letter HTML template to PDF via WeasyPrint.
-    Returns PDF bytes ready to upload to Zoho Sign.
+    Render the appropriate offer letter HTML template based on the Job Offer's
+    custom_offer_type (Full-time / Consultant / Intern). Returns PDF bytes.
+
+    Dispatcher in letters/dispatch.py picks template + context builder.
     """
     try:
-        context = build_offer_context(doc)
-        return merge_to_pdf_via_html("offer_letter.html", context)
+        template_filename, context = dispatch_offer_letter(doc)
+        return merge_to_pdf_via_html(template_filename, context)
     except Exception as exc:
         log_error(
             f"_generate_document: doc={doc.name} error={str(exc)[:200]}",

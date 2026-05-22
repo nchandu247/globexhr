@@ -1,0 +1,55 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Experience Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">To Whom It May Concern,</p>
+
+<div class="section">
+  <p>
+    This is to certify that <strong>{{ employee_name }}</strong> was employed
+    with Globex Digital Solutions Pvt Ltd from
+    <strong>{{ date_of_joining }}</strong> to
+    <strong>{{ last_working_day }}</strong>{% if tenure %}, a total tenure
+    of <strong>{{ tenure }}</strong>{% endif %}.
+  </p>
+
+  <p>
+    During this period, {{ employee_name }} served in the capacity of
+    <strong>{{ designation }}</strong>. We found {{ employee_name }} to be
+    a sincere, hardworking, and professional individual who consistently
+    demonstrated a positive attitude towards work and colleagues.
+  </p>
+
+  <p>
+    {{ employee_name }}'s conduct and performance during the tenure with
+    Globex Digital Solutions were satisfactory, and we have no hesitation
+    in recommending {{ employee_name }} for any future opportunities.
+  </p>
+
+  <p>
+    We wish {{ employee_name }} all the very best in their future endeavours.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For verification of this letter, please contact
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

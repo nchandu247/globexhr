@@ -1,0 +1,61 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Promotion Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ employee_name }},</p>
+
+<div class="section">
+  <p>
+    Congratulations! We are delighted to announce your promotion at Globex
+    Digital Solutions Pvt Ltd. This promotion is a recognition of your
+    dedication, professional growth, and the significant contributions you
+    have made to the organisation.
+  </p>
+
+  <p>
+    Effective <strong>{{ effective_date }}</strong>, you are promoted from
+    <strong>{{ old_designation }}</strong> to <strong>{{ new_designation }}</strong>.
+  </p>
+
+  {% if notes %}
+  <p>
+    {{ notes }}
+  </p>
+  {% endif %}
+
+  <p>
+    Your new role comes with expanded responsibilities, and we have full
+    confidence in your ability to deliver excellent results in this position.
+    Your terms and conditions of employment, including the revised
+    compensation (if any), will be communicated to you separately by the HR
+    team.
+  </p>
+
+  <p>
+    We thank you for your valuable contributions so far and look forward to
+    your continued excellence in your new role.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">Best wishes,<br>For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries regarding this promotion, please contact us at
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

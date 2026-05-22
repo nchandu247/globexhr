@@ -9,6 +9,7 @@ is ready BEFORE we switch the offer-letter handler over to the HTML path.
 Pure Python, no Frappe dependencies — testable offline.
 """
 import ctypes.util
+import os
 
 
 def check_pdf_dependencies() -> dict:
@@ -48,6 +49,17 @@ def check_pdf_dependencies() -> dict:
     )
     result["libgdk_pixbuf_available"] = any(
         ctypes.util.find_library(name) for name in ("gdk_pixbuf-2.0", "gdk-pixbuf-2.0")
+    )
+
+    # HR signature image (Phase B — used by PDF-only letters)
+    sig_path = os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "templates", "letters", "html", "img",
+        "hr_signature.png",
+    ))
+    result["hr_signature_image_path"] = sig_path
+    result["hr_signature_image_exists"] = os.path.exists(sig_path)
+    result["hr_signature_image_size_bytes"] = (
+        os.path.getsize(sig_path) if os.path.exists(sig_path) else 0
     )
 
     return result

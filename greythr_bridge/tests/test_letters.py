@@ -528,5 +528,324 @@ class TestBuildScriptPolish(unittest.TestCase):
                 os.unlink(dst)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase B tests — 6 new letter types + dispatcher + non_signing helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeJobOfferConsultant:
+    name = "OFR-CONS-001"
+    applicant_name = "Consultant Test"
+    designation = "Senior Advisor"
+    offer_date = "2026-06-01"
+    job_applicant = None
+    applicant_email = ""
+    custom_offer_type = "Consultant"
+    custom_engagement_duration_months = 6
+    custom_professional_fees_monthly = 100000
+    custom_date_of_joining = "2026-06-15"
+    custom_title = "Mr."
+    custom_work_location = "Hyderabad"
+    custom_notice_period = "30 days"
+    # Salary fields irrelevant for consultant — defaults
+    custom_annual_ctc = 0
+    custom_basic_monthly = 0
+    custom_hra_monthly = 0
+    custom_conveyance_allowance_monthly = 0
+    custom_medical_allowance_monthly = 0
+    custom_special_allowance_monthly = 0
+    custom_employee_pf_monthly = 0
+    custom_employee_esi_monthly = 0
+    custom_professional_tax_monthly = 0
+    custom_employer_pf = 0
+    custom_employer_esiinsurance_monthly = 0
+
+
+class _FakeJobOfferIntern:
+    name = "OFR-INT-001"
+    applicant_name = "Intern Test"
+    designation = "Software Intern"
+    offer_date = "2026-06-01"
+    job_applicant = None
+    applicant_email = ""
+    custom_offer_type = "Intern"
+    custom_internship_duration_months = 3
+    custom_stipend_monthly = 15000
+    custom_date_of_joining = "2026-06-15"
+    custom_title = "Mr."
+    custom_work_location = "Hyderabad"
+    custom_reporting_to = ""
+    # Other fields not used by intern context
+    custom_annual_ctc = 0
+    custom_basic_monthly = 0
+    custom_hra_monthly = 0
+    custom_conveyance_allowance_monthly = 0
+    custom_medical_allowance_monthly = 0
+    custom_special_allowance_monthly = 0
+    custom_employee_pf_monthly = 0
+    custom_employee_esi_monthly = 0
+    custom_professional_tax_monthly = 0
+    custom_employer_pf = 0
+    custom_employer_esiinsurance_monthly = 0
+
+
+class TestConsultantOfferContext(unittest.TestCase):
+    def test_returns_consultant_specific_keys(self):
+        from greythr_bridge.letters.merger import build_consultant_offer_context
+        ctx = build_consultant_offer_context(_FakeJobOfferConsultant())
+        for key in ("candidate_name", "designation", "engagement_start_date",
+                    "engagement_duration", "professional_fees_monthly",
+                    "professional_fees_annual", "work_location", "notice_period"):
+            self.assertIn(key, ctx, f"Missing: {key}")
+        self.assertEqual(ctx["candidate_name"], "Consultant Test")
+        self.assertEqual(ctx["designation"], "Senior Advisor")
+        # 6 months × 100000 = 1,00,000 monthly (formatted Indian comma)
+        self.assertEqual(ctx["professional_fees_monthly"], "1,00,000")
+        # Annual: 12 × 100000 = 12,00,000
+        self.assertEqual(ctx["professional_fees_annual"], "12,00,000")
+
+    def test_does_not_include_salary_table_keys(self):
+        from greythr_bridge.letters.merger import build_consultant_offer_context
+        ctx = build_consultant_offer_context(_FakeJobOfferConsultant())
+        for forbidden in ("basic_monthly", "hra_monthly", "employee_pf_monthly",
+                          "esi_applies", "total_deductions_annual"):
+            self.assertNotIn(forbidden, ctx,
+                             f"Consultant ctx should NOT include {forbidden}")
+
+
+class TestInternOfferContext(unittest.TestCase):
+    def test_returns_intern_specific_keys(self):
+        from greythr_bridge.letters.merger import build_intern_offer_context
+        ctx = build_intern_offer_context(_FakeJobOfferIntern())
+        for key in ("candidate_name", "designation", "internship_start_date",
+                    "internship_duration", "stipend_monthly", "stipend_total",
+                    "work_location"):
+            self.assertIn(key, ctx, f"Missing: {key}")
+        self.assertEqual(ctx["stipend_monthly"], "15,000")
+        # 3 months × 15000 = 45000
+        self.assertEqual(ctx["stipend_total"], "45,000")
+
+    def test_does_not_include_pf_or_salary_keys(self):
+        from greythr_bridge.letters.merger import build_intern_offer_context
+        ctx = build_intern_offer_context(_FakeJobOfferIntern())
+        for forbidden in ("basic_monthly", "employee_pf_monthly",
+                          "annual_ctc", "esi_applies"):
+            self.assertNotIn(forbidden, ctx,
+                             f"Intern ctx should NOT include {forbidden}")
+
+
+class TestDispatcher(unittest.TestCase):
+    """Verify dispatch_offer_letter() picks the correct template per offer_type."""
+
+    def test_consultant_offer_type_routes_to_consultant_template(self):
+        from greythr_bridge.letters.dispatch import dispatch_offer_letter
+        tpl, ctx = dispatch_offer_letter(_FakeJobOfferConsultant())
+        self.assertEqual(tpl, "consultant_offer_letter.html")
+        self.assertEqual(ctx["candidate_name"], "Consultant Test")
+
+    def test_intern_offer_type_routes_to_intern_template(self):
+        from greythr_bridge.letters.dispatch import dispatch_offer_letter
+        tpl, ctx = dispatch_offer_letter(_FakeJobOfferIntern())
+        self.assertEqual(tpl, "intern_offer_letter.html")
+        self.assertEqual(ctx["candidate_name"], "Intern Test")
+
+    def test_full_time_routes_to_default_offer_template(self):
+        from greythr_bridge.letters.dispatch import dispatch_offer_letter
+        # FakeDoc is "Full-time" by default — no custom_offer_type set
+        tpl, ctx = dispatch_offer_letter(FakeDoc())
+        self.assertEqual(tpl, "offer_letter.html")
+
+    def test_unknown_offer_type_falls_back_to_full_time(self):
+        from greythr_bridge.letters.dispatch import dispatch_offer_letter
+
+        class WeirdDoc:
+            name = "WEIRD-001"
+            applicant_name = "Weird Person"
+            designation = "X"
+            offer_date = "2026-06-01"
+            job_applicant = None
+            applicant_email = ""
+            custom_offer_type = "Freelancer"  # not a known type
+            custom_annual_ctc = 600000
+            custom_basic_monthly = 21600
+            custom_hra_monthly = 10800
+            custom_conveyance_allowance_monthly = 1600
+            custom_medical_allowance_monthly = 1250
+            custom_special_allowance_monthly = 7950
+            custom_employee_pf_monthly = 1800
+            custom_employee_esi_monthly = 0
+            custom_professional_tax_monthly = 200
+            custom_employer_pf = 1950
+            custom_employer_esiinsurance_monthly = 0
+
+        tpl, ctx = dispatch_offer_letter(WeirdDoc())
+        self.assertEqual(tpl, "offer_letter.html", "Unknown type should default to Full-time")
+
+
+class TestPhaseBHTMLRendering(unittest.TestCase):
+    """Verify each Phase B HTML template renders via Jinja2 without errors.
+    This catches template syntax bugs without needing WeasyPrint (which can't
+    render on Windows). Real PDF rendering happens on Frappe Cloud."""
+
+    def _render(self, template, context):
+        from jinja2 import Environment, FileSystemLoader, select_autoescape
+        import greythr_bridge.letters.merger as m
+        tmpl_dir = os.path.join(os.path.dirname(m.__file__), "..", "templates", "letters", "html")
+        env = Environment(
+            loader=FileSystemLoader(tmpl_dir),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
+        return env.get_template(template).render(**context)
+
+    def test_consultant_offer_template_renders(self):
+        from greythr_bridge.letters.merger import build_consultant_offer_context
+        html = self._render("consultant_offer_letter.html",
+                           build_consultant_offer_context(_FakeJobOfferConsultant()))
+        self.assertIn("Consultant Test", html)
+        self.assertIn("Senior Advisor", html)
+        self.assertIn("Consultancy Engagement", html)
+        self.assertIn("S:R1*", html)
+        self.assertIn("S:R2*", html)
+
+    def test_intern_offer_template_renders(self):
+        from greythr_bridge.letters.merger import build_intern_offer_context
+        html = self._render("intern_offer_letter.html",
+                           build_intern_offer_context(_FakeJobOfferIntern()))
+        self.assertIn("Intern Test", html)
+        self.assertIn("Internship Offer", html)
+        self.assertIn("S:R1*", html)
+        self.assertIn("S:R2*", html)
+
+    def test_increment_template_renders(self):
+        # Use a synthesized context — testing builder requires frappe.get_doc
+        context = {
+            "ref_number": "SSA-001",
+            "current_date": "01 June 2026",
+            "employee_name": "Test Employee",
+            "designation": "Engineer",
+            "old_annual_ctc": "6,00,000",
+            "new_annual_ctc": "7,50,000",
+            "increment_amount": "1,50,000",
+            "increment_percent": "25.0%",
+            "effective_date": "01 June 2026",
+            "previous_ssa": "SSA-PREV-001",
+            "signatory_name": "Test Signatory",
+        }
+        html = self._render("increment_letter.html", context)
+        self.assertIn("Test Employee", html)
+        self.assertIn("Salary Increment", html)
+        self.assertIn("1,50,000", html)
+        self.assertIn("25.0%", html)
+
+    def test_promotion_template_renders(self):
+        context = {
+            "ref_number": "EMP-001",
+            "current_date": "01 June 2026",
+            "employee_name": "Test Employee",
+            "title": "",
+            "old_designation": "Engineer",
+            "new_designation": "Senior Engineer",
+            "effective_date": "01 June 2026",
+            "notes": "Outstanding performance",
+            "signatory_name": "Test Signatory",
+        }
+        html = self._render("promotion_letter.html", context)
+        self.assertIn("Senior Engineer", html)
+        self.assertIn("Promotion", html)
+        self.assertIn("Outstanding performance", html)
+
+    def test_experience_template_renders(self):
+        context = {
+            "ref_number": "SEP-001",
+            "current_date": "01 June 2026",
+            "employee_name": "Test Employee",
+            "designation": "Engineer",
+            "date_of_joining": "01 January 2024",
+            "last_working_day": "31 May 2026",
+            "tenure": "2 years and 4 months",
+            "signatory_name": "Test Signatory",
+        }
+        html = self._render("experience_letter.html", context)
+        self.assertIn("Experience Letter", html)
+        self.assertIn("To Whom It May Concern", html)
+        self.assertIn("Test Employee", html)
+        self.assertIn("2 years and 4 months", html)
+
+    def test_relieving_template_renders(self):
+        context = {
+            "ref_number": "SEP-002",
+            "current_date": "01 June 2026",
+            "employee_name": "Test Employee",
+            "designation": "Engineer",
+            "date_of_joining": "01 January 2024",
+            "last_working_day": "31 May 2026",
+            "tenure": "2 years and 4 months",
+            "signatory_name": "Test Signatory",
+        }
+        html = self._render("relieving_letter.html", context)
+        self.assertIn("Relieving Letter", html)
+        self.assertIn("Test Employee", html)
+
+    def test_service_certificate_template_renders(self):
+        context = {
+            "ref_number": "EMP-002",
+            "current_date": "01 June 2026",
+            "employee_name": "Test Employee",
+            "designation": "Engineer",
+            "date_of_joining": "01 January 2024",
+            "tenure_so_far": "2 years and 5 months",
+            "signatory_name": "Test Signatory",
+        }
+        html = self._render("service_certificate.html", context)
+        self.assertIn("Service Certificate", html)
+        self.assertIn("Test Employee", html)
+        self.assertIn("presently", html)
+        self.assertIn("employed with Globex", html)
+
+
+class TestTenureCalculation(unittest.TestCase):
+    """Test the _tenure() helper used by Experience/Relieving/Service Cert."""
+
+    def test_two_years_three_months(self):
+        from greythr_bridge.letters.merger import _tenure
+        result = _tenure("2024-01-15", "2026-04-15")
+        self.assertEqual(result, "2 years and 3 months")
+
+    def test_one_year_one_month(self):
+        from greythr_bridge.letters.merger import _tenure
+        result = _tenure("2025-05-01", "2026-06-01")
+        self.assertEqual(result, "1 year and 1 month")
+
+    def test_exact_year_no_months(self):
+        from greythr_bridge.letters.merger import _tenure
+        result = _tenure("2025-06-01", "2026-06-01")
+        self.assertEqual(result, "1 year")
+
+    def test_less_than_month(self):
+        from greythr_bridge.letters.merger import _tenure
+        result = _tenure("2026-05-01", "2026-05-15")
+        self.assertEqual(result, "less than a month")
+
+
+class TestPhaseBCustomFields(unittest.TestCase):
+    """Verify all 12 new Phase B custom fields are defined in fixtures."""
+
+    def test_phase_b_fields_in_fixture(self):
+        import json
+        path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "custom_field.json")
+        with open(path) as f:
+            data = json.load(f)
+        fieldnames = {d["fieldname"] for d in data if "fieldname" in d}
+        # 12 Phase B fields
+        for expected in ("custom_offer_type", "custom_engagement_duration_months",
+                          "custom_professional_fees_monthly", "custom_stipend_monthly",
+                          "custom_internship_duration_months", "custom_annual_ctc",
+                          "custom_send_increment_letter", "custom_increment_letter_generated",
+                          "custom_send_experience_letter", "custom_send_relieving_letter",
+                          "custom_promotion_letter_attached",
+                          "custom_service_certificate_issued_at"):
+            self.assertIn(expected, fieldnames, f"Missing Phase B field: {expected}")
+
+
 if __name__ == "__main__":
     unittest.main()

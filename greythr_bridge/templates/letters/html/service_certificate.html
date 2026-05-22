@@ -1,0 +1,54 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Service Certificate</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">To Whom It May Concern,</p>
+
+<div class="section">
+  <p>
+    This is to certify that <strong>{{ employee_name }}</strong> is presently
+    employed with Globex Digital Solutions Pvt Ltd, having joined the
+    organisation on <strong>{{ date_of_joining }}</strong>.
+  </p>
+
+  <p>
+    {{ employee_name }} currently holds the position of
+    <strong>{{ designation }}</strong>
+    {% if tenure_so_far %} and has been associated with the company for
+    <strong>{{ tenure_so_far }}</strong>{% endif %}.
+  </p>
+
+  <p>
+    {{ employee_name }} is a valued member of our team. We confirm that
+    {{ employee_name }} is in good standing with the organisation as of
+    the date of issue of this certificate.
+  </p>
+
+  <p>
+    This certificate is issued upon request for {{ employee_name }}'s
+    personal records and any official requirements.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For verification of this certificate, please contact
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

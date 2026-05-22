@@ -1,0 +1,113 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Internship Offer Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ offer_date }}</span>
+</div>
+
+<p class="salutation">Dear {% if title %}{{ title }} {% endif %}{{ candidate_name }},</p>
+
+<div class="section">
+  <p>
+    Congratulations! We are delighted to offer you an internship at
+    Globex Digital Solutions Pvt Ltd (&ldquo;GDS&rdquo;) as
+    <strong>{{ designation }}</strong>. This is a great opportunity to gain
+    hands-on experience and contribute to meaningful work alongside our team
+    of professionals.
+  </p>
+
+  <p>
+    Your internship will commence on <strong>{{ internship_start_date }}</strong>
+    and is for a duration of <strong>{{ internship_duration }}</strong>. Your
+    work location will be <strong>{{ work_location }}</strong>.
+    {% if reporting_to %}You will report to <strong>{{ reporting_to }}</strong>
+    during your internship.{% endif %}
+  </p>
+
+  <p>
+    You will receive a monthly stipend of <strong>&#8377; {{ stipend_monthly }}</strong>
+    {% if stipend_total %}(total stipend over the internship period:
+    &#8377; {{ stipend_total }}){% endif %}, payable on the 7th of the
+    following month.
+  </p>
+</div>
+
+<h2>Learning Objectives</h2>
+<p>
+  As an intern, you will be exposed to real-world projects and given
+  opportunities to learn from senior team members. Your specific learning
+  objectives and project allocation will be discussed with your reporting
+  manager on your first day. We encourage you to take initiative, ask
+  questions, and seek feedback throughout your internship.
+</p>
+
+<h2>Conduct &amp; Confidentiality</h2>
+<p>
+  You are expected to maintain professional conduct, adhere to GDS workplace
+  policies, and maintain strict confidentiality regarding any proprietary
+  information, client data, or business processes you may be exposed to during
+  your internship. Any breach may result in immediate termination.
+</p>
+
+<h2>Working Hours &amp; Leave</h2>
+<p>
+  Standard working hours are 9:30 AM to 6:30 PM, Monday through Friday. Leave
+  during the internship should be discussed with and approved by your reporting
+  manager in advance, except in case of medical emergencies.
+</p>
+
+<h2>Termination</h2>
+<p>
+  This internship may be terminated by either party with a written notice of
+  seven (7) days. GDS reserves the right to terminate the internship with
+  immediate effect in case of misconduct, breach of confidentiality, or
+  unsatisfactory performance.
+</p>
+
+<h2>Certificate of Completion</h2>
+<p>
+  Upon successful completion of the internship and based on your performance,
+  you will receive an Internship Completion Certificate from GDS, which will
+  serve as a valuable addition to your professional credentials.
+</p>
+
+<h2>Acceptance</h2>
+<p>
+  Please sign this offer to confirm your acceptance of the internship and the
+  terms outlined above. We look forward to having you on board.
+</p>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Authorised Signatory</span><br>
+      <span class="muted">Date: {{ offer_date }}</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ candidate_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Intern Signature</span><br>
+      <span class="muted">Date:</span>
+    </div>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries regarding this internship, please contact us at
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

@@ -15,9 +15,15 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["dt", "in", ["Job Offer", "Employee", "Salary Structure Assignment"]],
+            ["dt", "in", ["Job Offer", "Employee", "Salary Structure Assignment",
+                          "Employee Separation"]],
             ["fieldname", "like", "custom_%"],
         ],
+    },
+    # Phase B — Client Scripts for Employee form buttons (Promotion + Service Cert)
+    {
+        "dt": "Client Script",
+        "filters": [["module", "=", "greytHR"]],
     },
 ]
 
@@ -36,11 +42,13 @@ doc_events = {
     "Job Offer": {
         "on_submit": "greythr_bridge.hooks_handlers.job_offer.on_offer_submitted",
     },
-    # Phase 6:
-    # "Salary Structure Assignment": {
-    #     "on_submit": "greythr_bridge.hooks_handlers.salary_assignment.on_submit",
-    # },
-    # "Employee": {
-    #     "on_update": "greythr_bridge.hooks_handlers.employee.on_update",
-    # },
+    # Phase B — auto-trigger letters on source-doc submit
+    "Salary Structure Assignment": {
+        "on_submit": "greythr_bridge.hooks_handlers.salary_structure_assignment.on_ssa_submitted",
+    },
+    "Employee Separation": {
+        "on_submit": "greythr_bridge.hooks_handlers.employee_separation.on_separation_submitted",
+    },
+    # Promotion + Service Certificate are MANUAL buttons (Client Scripts in
+    # fixtures/client_script.json), not auto-triggered — no doc_event needed.
 }
