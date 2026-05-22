@@ -1,6 +1,18 @@
 [
  {
   "doctype": "Custom Field",
+  "name": "Job Offer-custom_title",
+  "dt": "Job Offer",
+  "fieldname": "custom_title",
+  "label": "Title",
+  "fieldtype": "Select",
+  "options": "\nMr.\nMs.\nMrs.\nDr.\nMx.",
+  "insert_after": "applicant_name",
+  "module": "greytHR",
+  "description": "Salutation prefix (Mr./Ms./Dr.) used in the offer letter greeting. Optional — leave blank for no prefix."
+ },
+ {
+  "doctype": "Custom Field",
   "name": "Job Offer-custom_date_of_joining",
   "dt": "Job Offer",
   "fieldname": "custom_date_of_joining",

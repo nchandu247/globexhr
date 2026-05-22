@@ -36,6 +36,7 @@ class FakeDoc:
     offer_date = "2025-06-01"
     job_applicant = None
     applicant_email = "test.candidate@example.com"
+    custom_title = "Mr."
     custom_date_of_joining = "2025-06-16"
     custom_annual_ctc = 600000
     custom_basic_monthly = 21600      # 50% of ~43200 gross
@@ -68,6 +69,33 @@ class TestBuildOfferContext(unittest.TestCase):
 
     def test_candidate_name_present(self):
         self.assertEqual(self.ctx["candidate_name"], "Test Candidate")
+
+    def test_title_flows_through(self):
+        """custom_title field should be exposed as 'title' in context."""
+        self.assertEqual(self.ctx["title"], "Mr.")
+
+    def test_title_blank_when_field_missing(self):
+        """If custom_title isn't set, title key should be empty string (not None)."""
+        class NoTitleDoc:
+            name = "OFR-NOTITLE"
+            applicant_name = "X"
+            designation = "Y"
+            offer_date = "2025-06-01"
+            custom_annual_ctc = 600000
+            custom_basic_monthly = 21600
+            custom_hra_monthly = 10800
+            custom_conveyance_allowance_monthly = 1600
+            custom_medical_allowance_monthly = 1250
+            custom_special_allowance_monthly = 7950
+            custom_employee_pf_monthly = 1800
+            custom_employee_esi_monthly = 0
+            custom_professional_tax_monthly = 200
+            custom_employer_pf = 1950
+            custom_employer_esiinsurance_monthly = 0
+            # No custom_title
+
+        ctx = build_offer_context(NoTitleDoc())
+        self.assertEqual(ctx["title"], "")
 
     def test_gross_computed_from_components(self):
         expected_gross = 21600 + 10800 + 1600 + 1250 + 7950  # 43200
@@ -112,7 +140,7 @@ class TestBuildOfferContext(unittest.TestCase):
     def test_all_required_keys_present(self):
         required = [
             # header / addressing
-            "ref_number", "offer_date", "current_date", "candidate_name",
+            "ref_number", "offer_date", "current_date", "title", "candidate_name",
             "candidate_email", "candidate_mobile", "candidate_address",
             "designation", "department", "band", "date_of_joining",
             "acceptance_deadline",

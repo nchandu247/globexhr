@@ -9,7 +9,7 @@
   <span class="date">{{ offer_date }}</span>
 </div>
 
-<p class="salutation">Dear {{ candidate_name }},</p>
+<p class="salutation">Dear {% if title %}{{ title }} {% endif %}{{ candidate_name }},</p>
 
 <div class="section">
   <p>
@@ -273,5 +273,12 @@
     </div>
   </div>
 </div>
+
+{# ── HR contact for queries ─────────────────────────────────────────────── #}
+<p class="hr-contact">
+  For any queries regarding this offer, please contact us at
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
 
 {% endblock %}

@@ -10,7 +10,10 @@
 /* ── Page setup (CSS Paged Media) ──────────────────────────── */
 @page {
   size: A4;
-  margin: 22mm 18mm 28mm 18mm;  /* extra bottom for taller footer (address inside) */
+  /* Bottom margin enlarged from 28mm to 38mm to leave space below our footer
+     for Zoho Sign's auto-appended Document ID stamp (configured at every-page
+     bottom in Zoho console). Without this, Zoho's stamp overlapped our address. */
+  margin: 22mm 18mm 38mm 18mm;
 
   @top-left {
     content: element(letterhead-logo);
@@ -210,26 +213,28 @@ table.salary-breakup tr.total td {
   color: #1a1a1a;
 }
 
-/* ── Notes block ──────────────────────────────────────────── */
+/* ── Notes block (tightened to fit on same page as salary table) ── */
 .notes-block {
   background: #fafafa;
   border-left: 3pt solid #999;
-  padding: 2mm 3mm;
-  margin-top: 3mm;
-  font-size: 9.5pt;
+  padding: 1.5mm 3mm;
+  margin-top: 2mm;
+  font-size: 8.5pt;
+  page-break-inside: avoid;  /* never split across pages */
 }
 .notes-block .notes-title {
   font-weight: 600;
   color: #555;
-  margin-bottom: 1mm;
+  margin-bottom: 0.8mm;
+  font-size: 9pt;
 }
 .notes-block ul {
   list-style: disc;
   padding-left: 5mm;
 }
 .notes-block li {
-  margin-bottom: 1mm;
-  line-height: 1.4;
+  margin-bottom: 0.5mm;
+  line-height: 1.3;
 }
 
 /* ── Numbered list (notice period clauses) ─────────────────── */
@@ -284,6 +289,21 @@ ol.clauses li {
   page-break-inside: avoid;
 }
 .acceptance p { margin-bottom: 1.5mm; }
+
+/* ── HR contact footer block ──────────────────────────────── */
+.hr-contact {
+  margin-top: 12mm;
+  padding: 2.5mm 3mm;
+  background: #fafafa;
+  border-radius: 1mm;
+  font-size: 9.5pt;
+  color: #444;
+  text-align: center;
+  page-break-inside: avoid;
+}
+.hr-contact strong {
+  color: #01248A;
+}
 
 /* ── Reporting Manager callout (when present) ──────────────── */
 .reporting-mgr {

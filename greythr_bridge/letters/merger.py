@@ -295,6 +295,7 @@ def build_offer_context(doc) -> dict:
         # ── Header / addressing ────────────────────────────────────────────────
         "ref_number":          doc.name,
         "offer_date":          fmt_date(doc.offer_date),
+        "title":               getattr(doc, "custom_title", None) or "",
         "candidate_name":      doc.applicant_name or "",
         "candidate_email":     candidate_email,
         "candidate_mobile":    candidate_mobile,
