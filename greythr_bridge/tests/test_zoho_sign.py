@@ -4,6 +4,7 @@ Tests for api/zoho_sign.py and webhooks/zoho_sign.py — all offline.
 import hashlib
 import hmac
 import json
+from unittest.mock import MagicMock
 
 import pytest
 import responses as rsps_lib
@@ -423,6 +424,61 @@ def test_download_and_attach_signed_pdf_handles_empty(patch_frappe, settings):
     from greythr_bridge.webhooks.zoho_sign import _download_and_attach_signed_pdf
     # Should not raise
     _download_and_attach_signed_pdf("HR-OFF-TEST", "REQ-EMPTY")
+
+
+# ── _safe_set_value (defensive helper added 2026-05-22 after stuck-status bug) ──
+
+def test_safe_set_value_when_field_exists(patch_frappe):
+    """When meta has the field, set_value is called and commit fires."""
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
+    patch_frappe.db.set_value = MagicMock()
+    patch_frappe.db.commit = MagicMock()
+
+    from greythr_bridge.webhooks.zoho_sign import _safe_set_value
+    result = _safe_set_value("Job Offer", "HR-OFF-X", "status", "Accepted")
+
+    assert result is True
+    patch_frappe.db.set_value.assert_called_once_with(
+        "Job Offer", "HR-OFF-X", "status", "Accepted"
+    )
+    patch_frappe.db.commit.assert_called_once()
+
+
+def test_safe_set_value_when_field_missing_does_not_touch_db(patch_frappe):
+    """Missing field → log + return False. set_value MUST NOT be called
+    (calling it with a missing field is exactly the bug we are preventing)."""
+    meta = MagicMock()
+    meta.has_field.return_value = False
+    patch_frappe.get_meta.return_value = meta
+    patch_frappe.db.set_value = MagicMock()
+    patch_frappe.db.commit = MagicMock()
+
+    from greythr_bridge.webhooks.zoho_sign import _safe_set_value
+    result = _safe_set_value(
+        "Job Offer", "HR-OFF-X", "custom_missing_field", "2026-05-22"
+    )
+
+    assert result is False
+    patch_frappe.db.set_value.assert_not_called()
+    patch_frappe.db.commit.assert_not_called()
+
+
+def test_safe_set_value_rolls_back_on_db_error(patch_frappe):
+    """If set_value raises (e.g. unexpected SQL error), rollback runs +
+    log_error fires + returns False. The next call must still work."""
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
+    patch_frappe.db.set_value = MagicMock(side_effect=RuntimeError("boom"))
+    patch_frappe.db.rollback = MagicMock()
+
+    from greythr_bridge.webhooks.zoho_sign import _safe_set_value
+    result = _safe_set_value("Job Offer", "HR-OFF-X", "status", "Accepted")
+
+    assert result is False
+    patch_frappe.db.rollback.assert_called_once()
 
 
 def test_force_complete_offer_function_exists_and_returns_dict(patch_frappe):

@@ -119,31 +119,25 @@ class TestWorkspaceDefinition(unittest.TestCase):
                     f"but no link_to — Frappe will reject this."
                 )
 
-    # Phase A custom fields created via the live-site UI but never round-tripped
-    # back to fixtures/custom_field.json. They exist on the live site and are
-    # used by the Monitor cards, but the test can't see them.
-    _PHASE_A_LIVE_ONLY_FIELDS = {
-        "custom_zoho_sign_request_id",
-        "custom_zoho_sign_signed_at",
-    }
-
     def test_custom_field_urls_reference_real_fields(self):
         """Any URL referencing a custom_* field must match a fieldname
-        defined in fixtures/custom_field.json — catches rename drift."""
+        defined in fixtures/custom_field.json — catches rename drift.
+
+        Note: The earlier `_PHASE_A_LIVE_ONLY_FIELDS` allowlist was removed
+        once custom_zoho_sign_request_id and custom_zoho_sign_signed_at were
+        added to the fixture (the missing _signed_at field was the root cause
+        of the silent webhook bug on 2026-05-22)."""
         ws = _load_workspace()
         custom_fields = _load_custom_fields()
         known_fieldnames = {d["fieldname"] for d in custom_fields if "fieldname" in d}
-        allowed = known_fieldnames | self._PHASE_A_LIVE_ONLY_FIELDS
 
         url_field_pattern = re.compile(r"custom_[a-z0-9_]+")
         for sc in ws["shortcuts"]:
             for referenced in url_field_pattern.findall(sc["url"]):
                 self.assertIn(
-                    referenced, allowed,
+                    referenced, known_fieldnames,
                     f"Shortcut '{sc['label']}' references unknown custom field "
-                    f"'{referenced}' — was it renamed in custom_field.json? "
-                    f"(If it's a live-only Phase A field, add it to "
-                    f"_PHASE_A_LIVE_ONLY_FIELDS.)"
+                    f"'{referenced}' — was it renamed in custom_field.json?"
                 )
 
     def test_content_present_and_well_formed(self):

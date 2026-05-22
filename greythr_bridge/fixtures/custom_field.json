@@ -173,6 +173,30 @@
   "module": "greytHR",
   "description": "Internship duration in months."
  },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_zoho_sign_request_id",
+  "dt": "Job Offer",
+  "fieldname": "custom_zoho_sign_request_id",
+  "label": "Zoho Sign Request ID",
+  "fieldtype": "Data",
+  "read_only": 1,
+  "insert_after": "custom_internship_duration_months",
+  "module": "greytHR",
+  "description": "Set by send_offer_letter after Zoho Sign API call. Used by the webhook to look up which Job Offer a signed-document notification belongs to. Read-only — do not edit manually."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Job Offer-custom_zoho_sign_signed_at",
+  "dt": "Job Offer",
+  "fieldname": "custom_zoho_sign_signed_at",
+  "label": "Zoho Sign Signed At",
+  "fieldtype": "Datetime",
+  "read_only": 1,
+  "insert_after": "custom_zoho_sign_request_id",
+  "module": "greytHR",
+  "description": "Set by Zoho Sign webhook when all signers complete. Empty = signing still in progress (or never sent). Read-only — do not edit manually."
+ },
 
  {
   "doctype": "Custom Field",

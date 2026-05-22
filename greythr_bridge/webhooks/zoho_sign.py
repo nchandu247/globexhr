@@ -70,14 +70,13 @@ def callback():
         # ── 5. Dispatch — all real work is enqueued ────────────────────────────
         if operation_type == "RequestCompleted":
             if letter_type == "offer_letter" and docname:
-                # Update Job Offer status + signed timestamp atomically.
-                # Status field uses values: "Awaiting Response" (default),
-                # "Accepted", "Rejected". Setting to "Accepted" lets HR see
-                # the signing is complete without checking Zoho.
-                frappe.db.set_value(
+                # Update Job Offer status + signed timestamp INDEPENDENTLY.
+                # Each set_value commits on success — see _safe_set_value
+                # docstring for the silent-failure history that drove this.
+                _safe_set_value(
                     "Job Offer", docname, "status", "Accepted"
                 )
-                frappe.db.set_value(
+                _safe_set_value(
                     "Job Offer", docname, "custom_zoho_sign_signed_at",
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
@@ -118,13 +117,58 @@ def callback():
         return {"status": "error logged"}
 
 
+# ── defensive db helpers ──────────────────────────────────────────────────────
+
+def _safe_set_value(doctype: str, name: str, field: str, value) -> bool:
+    """
+    Set a single field on a document, isolated from other writes.
+
+    Why this exists (root cause of 2026-05-22 silent webhook bug):
+    `frappe.db.set_value` to a non-existent field raises a SQL/meta error.
+    When called inside a transaction that already updated other fields
+    (e.g. status), MariaDB rolls back the WHOLE transaction. The outer
+    try/except in callback() swallows the error and returns 200 OK to
+    Zoho — but no fields actually saved. Stuck on "Awaiting Response".
+
+    This helper:
+      1. Checks the field exists in the doctype meta first (avoids SQL error)
+      2. Commits on success (per-field durability — partial failure is OK)
+      3. Rolls back + logs on failure (next call still works)
+
+    Returns True if the value was saved, False if skipped/failed.
+    """
+    try:
+        if not frappe.get_meta(doctype).has_field(field):
+            log_error(
+                f"_safe_set_value: skipped — field '{field}' missing on '{doctype}'. "
+                f"Add it as a Custom Field (check fixtures/custom_field.json). "
+                f"docname={name}",
+                "greytHR Webhook Field Missing",
+            )
+            return False
+        frappe.db.set_value(doctype, name, field, value)
+        frappe.db.commit()
+        return True
+    except Exception as exc:
+        try:
+            frappe.db.rollback()
+        except Exception:
+            pass
+        log_error(
+            f"_safe_set_value: UPDATE failed for {doctype}.{field} on {name}: "
+            f"{str(exc)[:200]}",
+            "greytHR Webhook Update Error",
+        )
+        return False
+
+
 # ── background handlers ───────────────────────────────────────────────────────
 
 def _handle_declined(docname: str, operation_type: str) -> None:
     """Mark Job Offer as Rejected and notify HR Manager."""
     try:
         # Frappe HR Job Offer.status values: Awaiting Response, Accepted, Rejected
-        frappe.db.set_value("Job Offer", docname, "status", "Rejected")
+        _safe_set_value("Job Offer", docname, "status", "Rejected")
         _notify_hr(
             docname,
             f"Signing {operation_type.replace('Request', '')} for {docname}. "
@@ -197,9 +241,11 @@ def force_complete_offer(offer_name: str) -> dict:
     offer = frappe.get_doc("Job Offer", offer_name)
     request_id = getattr(offer, "custom_zoho_sign_request_id", None)
 
-    frappe.db.set_value("Job Offer", offer_name, "status", "Accepted")
+    # Per-field writes via _safe_set_value so a missing field doesn't
+    # roll back the status update.
+    _safe_set_value("Job Offer", offer_name, "status", "Accepted")
     if not getattr(offer, "custom_zoho_sign_signed_at", None):
-        frappe.db.set_value(
+        _safe_set_value(
             "Job Offer", offer_name, "custom_zoho_sign_signed_at",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )

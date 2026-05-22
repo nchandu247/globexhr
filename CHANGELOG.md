@@ -354,3 +354,40 @@ Fix:
 - ✅ Test suite: **126 passing** (was 124), 3 skipped
 
 **Reference:** widget schema verified against [hrms/payroll/workspace/payroll/payroll.json](https://github.com/frappe/hrms/blob/develop/hrms/payroll/workspace/payroll/payroll.json) and Frappe v16 renderer source at [workspace.js](https://github.com/frappe/frappe/blob/develop/frappe/public/js/frappe/views/workspace/workspace.js).
+
+---
+
+## [Unreleased] — Zoho Sign webhook hardening (2026-05-22)
+
+### Stuck "Awaiting Response" status — root cause + defensive fix
+
+**Symptom:** Two Job Offers (Megahna Reddy, Rajyalakshmi Nalluri) remained on `status = Awaiting Response` even though both signers had signed in Zoho Sign. Bhuvan and Chandu showed `Accepted`, so the code worked for some offers but not others.
+
+**Root cause:** the `custom_zoho_sign_signed_at` field did not exist on the Job Offer DocType. Confirmed via Frappe DataError:
+> `Field not permitted in query: custom_zoho_sign_signed_at`
+
+The webhook's `RequestCompleted` handler was doing TWO `frappe.db.set_value` calls in one transaction:
+```python
+frappe.db.set_value("Job Offer", docname, "status", "Accepted")           # succeeds
+frappe.db.set_value("Job Offer", docname, "custom_zoho_sign_signed_at", ...) # SQL error
+```
+When the second `set_value` hit the missing column, MariaDB rolled back the **entire** transaction — including the `status` update from one line above. The outer `try/except Exception` swallowed the error, returned 200 OK to Zoho, and from the outside it looked fine. Nothing actually saved.
+
+(Previously-marked "Accepted" offers had their status changed manually via the form, not by the webhook.)
+
+**Earlier CHANGELOG note retraction:** the v1 Workspace entry claimed `custom_zoho_sign_request_id` and `custom_zoho_sign_signed_at` "exist on the live site (created via Customize Form during Phase A)." That was a documentation assumption, not a verified fact. The `_request_id` field did exist; the `_signed_at` field did not. The note is now corrected by this fix.
+
+**Fixes shipped:**
+
+- ✅ **`fixtures/custom_field.json`** — added both `custom_zoho_sign_request_id` (Data, read-only) and `custom_zoho_sign_signed_at` (Datetime, read-only) on Job Offer with `module=greytHR`. Auto-installs on `bench migrate` for fresh deployments.
+- ✅ **`webhooks/zoho_sign.py`** — new `_safe_set_value(doctype, name, field, value)` helper that:
+  1. Checks `frappe.get_meta(doctype).has_field(field)` first — if missing, logs `"greytHR Webhook Field Missing"` to Error Log and returns False (no SQL fired, no transaction poisoned)
+  2. On successful `set_value`, explicit `frappe.db.commit()` — per-field durability so a later failure can't undo earlier writes
+  3. On unexpected DB error, `frappe.db.rollback()` + log + return False — next call works cleanly
+- ✅ All three `set_value` call sites in the webhook routed through `_safe_set_value`: `RequestCompleted` handler, `_handle_declined`, `force_complete_offer`.
+- ✅ **`tests/test_zoho_sign.py`** — three focused tests for `_safe_set_value`: field exists path, field missing path (must NOT call set_value), DB error path (must rollback).
+- ✅ **`tests/test_workspace_fixture.py`** — removed the `_PHASE_A_LIVE_ONLY_FIELDS` allowlist; the workspace test now strictly requires both `custom_zoho_sign_*` fields to be in the fixture (no allowlist escape hatch).
+- ✅ Test suite: **129 passing** (was 126), 3 skipped.
+- ⬜ **Stranded offers recovery (post-deploy):** HR to call `force_complete_offer` for Megahna Reddy (HR-OFF-2026-00004) and Rajyalakshmi Nalluri (HR-OFF-2026-00003) once this fix is live — the endpoint now uses `_safe_set_value` so it actually persists status + signed_at instead of silently rolling back.
+
+**Why this matters beyond Zoho Sign:** the `_safe_set_value` pattern (check meta before SQL + commit-per-field) is a general defense against the "missing custom field rolls back the whole transaction" trap. Any future webhook or background job that writes multiple fields in one handler should follow the same pattern.
