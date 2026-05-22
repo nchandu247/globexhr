@@ -70,11 +70,34 @@ greythr_bridge/
 │   ├── salary_structure_assignment.py       [NEW]
 │   ├── employee_separation.py               [NEW]
 │   └── employee.py                          [NEW: manual button hooks for Promotion + Service Cert]
-├── hooks.py                                 [MODIFIED: register new doc_events]
-└── fixtures/custom_field.json               [+ new fields: see Section 5]
+├── hooks.py                                 [MODIFIED: register new doc_events — see below]
+└── fixtures/
+    ├── custom_field.json                    [+ new fields: see Section 5]
+    └── client_script.json                   [NEW: Promotion + Service Cert buttons]
 ```
 
+### `hooks.py` doc_events additions (explicit)
+
+```python
+doc_events = {
+    "Job Offer": {
+        "on_submit": "greythr_bridge.hooks_handlers.job_offer.on_offer_submitted",
+    },
+    # NEW for Phase B:
+    "Salary Structure Assignment": {
+        "on_submit": "greythr_bridge.hooks_handlers.salary_structure_assignment.on_ssa_submitted",
+    },
+    "Employee Separation": {
+        "on_submit": "greythr_bridge.hooks_handlers.employee_separation.on_separation_submitted",
+    },
+}
+```
+
+(No `Employee` doc_event needed — Promotion + Service Cert are manual buttons, not on_submit.)
+
 **Reuse principle:** `build_offer_context()` from Phase A stays. New context builders share helpers (`fmt_inr`, `fmt_date`, `_get_applicant_email`).
+
+**Independence principle (Gap 11 fix):** `build_consultant_offer_context()` is INDEPENDENT — not derived from `build_offer_context()` — because consultants have different fields (no PF/ESI/Annexure A salary table). Same for Intern. Both new builders share the formatting helpers but assemble their own minimal context dict.
 
 ---
 
@@ -83,7 +106,8 @@ greythr_bridge/
 ### 4.1 Consultant Offer Letter
 
 - **Trigger:** Job Offer `on_submit` → handler branches on `custom_offer_type == "Consultant"`
-- **Context builder:** `build_consultant_offer_context(doc)` in merger.py — reuses 80% of `build_offer_context` but adds: `engagement_duration`, `professional_fees_monthly`, `gst_clause`. Excludes: probation, PF/ESI deductions (consultants are not employees).
+- **Context builder:** `build_consultant_offer_context(doc)` in merger.py — INDEPENDENT of `build_offer_context` (per Gap 11 fix). Builds its own minimal context: `candidate_name`, `title`, `designation`, `engagement_start_date` (reuses `custom_date_of_joining` field — semantically "start date" for consultants), `engagement_duration_months`, `professional_fees_monthly`, `work_location`, `gst_clause`. Does NOT include PF/ESI/Annexure A salary keys.
+- **DOJ field reuse:** `custom_date_of_joining` is still mandatory on Job Offer; consultants read it as "Engagement Start Date" in the letter content. No field change needed.
 - **HTML template:** `consultant_offer_letter.html` — same structure as Phase A but content reflects consultancy relationship:
   - No "employment" language — uses "engagement"
   - No salary table (Annexure A); instead a "Professional Fees" section with monthly retainer
@@ -95,7 +119,8 @@ greythr_bridge/
 ### 4.2 Intern Offer Letter
 
 - **Trigger:** Same as Consultant — Job Offer `on_submit` with `custom_offer_type == "Intern"`
-- **Context builder:** `build_intern_offer_context(doc)` — uses: `stipend_monthly`, `internship_duration_months`, `learning_objectives`
+- **Context builder:** `build_intern_offer_context(doc)` — INDEPENDENT (per Gap 11). Minimal context: `candidate_name`, `title`, `designation` (intern role), `internship_start_date` (reuses `custom_date_of_joining`), `internship_duration_months`, `stipend_monthly`, `work_location`, `reporting_to`, `learning_objectives`. No PF/ESI/Annexure A.
+- **DOJ field reuse:** `custom_date_of_joining` semantically "Internship Start Date" for interns.
 - **HTML template:** `intern_offer_letter.html`:
   - "Stipend" (not "salary")
   - Defined internship duration (e.g., 3 months, 6 months)
@@ -107,11 +132,16 @@ greythr_bridge/
 
 ### 4.3 Increment Letter
 
-- **Trigger:** Salary Structure Assignment `on_submit` (new hook in `hooks_handlers/salary_structure_assignment.py`)
-- **Context builder:** `build_increment_context(doc)`:
-  - Resolves Employee from SSA
-  - Fetches PREVIOUS active SSA for same employee to compute old CTC vs new CTC
-  - Computes increment amount (delta) and percentage
+- **Trigger:** Salary Structure Assignment `on_submit`, but SKIP if any of:
+  - `custom_send_increment_letter` checkbox is unchecked (HR decision)
+  - No previous active SSA exists for this Employee (first salary — not an increment)
+  - New CTC ≤ previous CTC (not an increment; could be a downgrade or correction)
+- **Background:** `frappe.enqueue(queue="short")` so on_submit returns within 5 seconds
+- **CTC source (Gap 1 fix):** New `custom_annual_ctc` Currency field added to SSA. HR fills this when creating the SSA. Context builder reads it directly — no formula/component summing.
+- **Context builder:** `build_increment_context(ssa_doc)`:
+  - Resolves Employee from `ssa_doc.employee`
+  - Queries previous active SSA via `frappe.get_all("Salary Structure Assignment", filters={"employee": ..., "docstatus": 1, "name": ["!=", ssa_doc.name]}, fields=["name","custom_annual_ctc","from_date"], order_by="from_date desc", limit=1)`
+  - Computes increment delta (INR + %)
 - **HTML template:** `increment_letter.html`:
   - Header: "Salary Increment Letter" / "Compensation Revision Letter"
   - Salutation to employee by name
@@ -120,12 +150,21 @@ greythr_bridge/
   - Effective date
   - Brief Annexure showing new monthly breakup
   - HR signature image (no candidate signature)
-- **PDF-only:** No Zoho. Generated PDF attached to SSA, emailed to employee's company email.
+- **PDF-only:** No Zoho. Generated PDF attached to SSA via `non_signing.generate_and_deliver()`.
+- **Email delivery:** Employee's `company_email` → fallback `personal_email` → if neither, log warning and attach to SSA only.
 
 ### 4.4 Promotion Letter
 
 - **Trigger:** Manual button "Generate Promotion Letter" on Employee form
-- **Context builder:** `build_promotion_context(doc, new_designation, effective_date, notes)` — takes args from button dialog
+- **Dialog (Gap 2 fix):** Button opens Frappe dialog asking for FOUR fields:
+  - **Previous designation** (pre-filled with current `employee.designation`, HR can edit)
+  - **New designation** (required)
+  - **Effective date** (required, defaults to today)
+  - **Manager notes** (optional textarea)
+
+  Why both old + new: at button-click time we don't know if HR has already updated `designation`. Asking explicitly removes ambiguity.
+- **Context builder:** `build_promotion_context(emp_doc, old_designation, new_designation, effective_date, notes)`
+- **Background (Gap 6 fix):** Whitelisted method `send_promotion_letter(...)` invokes `frappe.enqueue(queue="short")` so the dialog returns immediately.
 - **HTML template:** `promotion_letter.html`:
   - Header: "Promotion Letter"
   - Old designation → New designation
@@ -133,28 +172,35 @@ greythr_bridge/
   - Optional manager notes
   - Brief congratulations message
   - HR signature image
-- **PDF-only:** Attached to Employee record, emailed.
-- **Button placement:** Frappe Server Script or whitelisted method invoked from a custom client-script button on Employee form. We add the client script via fixtures.
+- **PDF-only:** Attached to Employee record via `non_signing.generate_and_deliver()`.
+- **Email delivery (Gap 7 fix):** `company_email` → fallback `personal_email` → if neither, attach only.
+- **Button mechanism (Gap 3 fix):** Client Script shipped in `fixtures/client_script.json`:
+  - Adds button on Employee form
+  - Visible only to users with `HR Manager` OR `System Manager` role (Gap 9)
+  - On click → opens dialog → calls whitelisted `greythr_bridge.hooks_handlers.employee.send_promotion_letter`
 
 ### 4.5 Experience Letter
 
 - **Trigger:** Employee Separation `on_submit` — IF `custom_send_experience_letter` is checked
+- **Background (Gap 6):** Enqueued via `frappe.enqueue(queue="short")`
 - **Context builder:** `build_experience_context(doc)`:
-  - Resolves Employee
+  - Resolves Employee via `doc.employee`
   - Computes employment summary (joining date, last working day, total tenure in years+months)
-  - Lists all designations held (from Employee history if available, else current)
+  - Uses current designation (Frappe HR doesn't always have designation history)
 - **HTML template:** `experience_letter.html`:
   - "To Whom It May Concern" header
   - Employment dates + tenure summary
-  - Designation(s) held
+  - Designation held
   - Conduct certification: "...his conduct during this period was satisfactory"
   - Closing wishes
   - HR signature image
-- **PDF-only:** Attached to Separation, emailed.
+- **PDF-only:** Attached to Separation via `non_signing.generate_and_deliver()`.
+- **Email delivery (Gap 7):** `personal_email` preferred (employee is leaving — company_email may be deactivated). Fallback `company_email`. If neither, attach only.
 
 ### 4.6 Relieving Letter
 
 - **Trigger:** Employee Separation `on_submit` — IF `custom_send_relieving_letter` is checked
+- **Background (Gap 6):** Enqueued via `frappe.enqueue(queue="short")` — fires alongside Experience Letter if both checkboxes are set
 - **Context builder:** `build_relieving_context(doc)` — similar to Experience but different content
 - **HTML template:** `relieving_letter.html`:
   - "To Whom It May Concern" header
@@ -163,19 +209,27 @@ greythr_bridge/
   - Last working day
   - Brief tenure summary
   - HR signature image
-- **PDF-only:** Attached to Separation, emailed.
+- **PDF-only:** Attached to Separation via `non_signing.generate_and_deliver()`.
+- **Email delivery (Gap 7):** Same as Experience — `personal_email` preferred, then `company_email`, then attach-only.
 
 ### 4.7 Service Certificate
 
-- **Trigger:** Manual button "Generate Service Certificate" on Employee form (for current employees, not separated)
-- **Context builder:** `build_service_certificate_context(doc)` — current designation, joining date, status: currently employed
+- **Trigger:** Manual button "Generate Service Certificate" on Employee form (for current employees only)
+- **Button mechanism (Gap 3):** Client Script in `fixtures/client_script.json`:
+  - Adds button on Employee form
+  - Visible only to `HR Manager` OR `System Manager` (Gap 9)
+  - Only renders if Employee `status == "Active"` (skips ex-employees)
+  - On click → opens confirmation dialog → calls whitelisted `greythr_bridge.hooks_handlers.employee.send_service_certificate`
+- **Background (Gap 6):** Enqueued via `frappe.enqueue(queue="short")`
+- **Context builder:** `build_service_certificate_context(emp_doc)` — current designation, joining date, status confirmation
 - **HTML template:** `service_certificate.html`:
   - "To Whom It May Concern" header
-  - Confirms candidate IS currently employed (as of date of issue)
+  - Confirms employee IS currently employed (as of date of issue)
   - Current designation + joining date
   - Brief certificate-style language
   - HR signature image
-- **PDF-only:** Attached to Employee record, emailed if requested.
+- **PDF-only:** Attached to Employee record via `non_signing.generate_and_deliver()`.
+- **Email delivery (Gap 7):** `company_email` → `personal_email` → attach-only. Updates `custom_service_certificate_issued_at` after success.
 
 ---
 
@@ -193,11 +247,12 @@ Added to `fixtures/custom_field.json`:
 | `custom_send_experience_letter` | Employee Separation | Check | Toggle Experience Letter generation | 1 (checked) |
 | `custom_send_relieving_letter` | Employee Separation | Check | Toggle Relieving Letter generation | 1 (checked) |
 | `custom_send_increment_letter` | Salary Structure Assignment | Check | Toggle Increment Letter generation (uncheck for initial salary creation, not an actual increment) | 1 (checked) |
+| `custom_annual_ctc` | Salary Structure Assignment | Currency | Annual CTC value used by Increment Letter (Gap 1 fix — SSA has no native CTC field) | (empty) |
 | `custom_increment_letter_generated` | Salary Structure Assignment | Check | Marker after PDF generated | 0 |
 | `custom_promotion_letter_attached` | Employee | Check | Marker after Promotion Letter generated | 0 |
 | `custom_service_certificate_issued_at` | Employee | Date | Last service cert issue date | (empty) |
 
-**Total: 11 new custom fields.** All auto-installed via fixtures on `bench migrate`.
+**Total: 12 new custom fields.** All auto-installed via fixtures on `bench migrate`.
 
 ---
 
@@ -211,16 +266,28 @@ Helper for the 5 PDF-only letters (Increment, Promotion, Experience, Relieving, 
 def generate_and_deliver(
     template_filename: str,
     context: dict,
-    attach_to: tuple[str, str],  # (doctype, docname)
-    email_to: str | None = None,
+    attach_to: tuple[str, str],          # (doctype, docname)
+    file_label: str,                     # e.g. "Increment Letter"
+    employee_doc=None,                   # Frappe Employee doc — used to resolve email
     email_subject: str = "",
     email_body: str = "",
+    prefer_personal_email: bool = False, # True for separation letters
 ) -> bytes:
     """
     Render PDF via merge_to_pdf_via_html(), attach as File to source doc,
-    optionally email to employee. Returns PDF bytes.
+    resolve employee email with fallback chain, email if address found.
+    Returns PDF bytes.
+
+    Email resolution (Gap 7 fix):
+      if prefer_personal_email:
+        personal_email -> company_email -> skip (log warning)
+      else:
+        company_email -> personal_email -> skip (log warning)
     """
 ```
+
+All callers MUST invoke this from inside `frappe.enqueue(queue="short")` so the
+synchronous on_submit / button-click handler returns within 5 seconds (Gap 6 fix).
 
 ### 6.2 `letters/dispatch.py` (NEW)
 
@@ -272,11 +339,19 @@ Job Offer submit → on_submit hook → send_offer_letter handler →
 ### For PDF-only letters
 ```
 Trigger event (submit or button click) → handler →
+  → frappe.enqueue("...send_<letter>", queue="short", source_name=...)  [Gap 6: always enqueued]
+  → handler returns immediately (5-second window safe)
+
+  Background job:
   → build_<letter>_context(doc) → context dict →
-  → generate_and_deliver(template, context, attach_to=(doctype, docname), email_to=...) →
+  → non_signing.generate_and_deliver(template, context, attach_to=(doctype,docname), employee_doc=..., ...) →
     1. merge_to_pdf_via_html() → PDF bytes
     2. Frappe File doc.insert() → attached to source
-    3. frappe.sendmail() → employee inbox (optional)
+    3. Resolve email via fallback chain [Gap 7]:
+       - For onboarding/active employee letters: company_email -> personal_email -> skip
+       - For separation letters (Experience, Relieving): personal_email -> company_email -> skip
+    4. If email resolved: frappe.sendmail() → employee inbox
+       Otherwise: log warning, skip email step
   → marker field set (e.g., custom_increment_letter_generated = 1)
 ```
 
@@ -312,7 +387,17 @@ Specs:
 - Recommended size: ~200×60 pixels (will display at 14mm height in PDF, auto-width)
 - Background: transparent (so it overlays nicely on the white PDF)
 
-Verification: after deploy, run `health_check` URL — we'll extend it to verify hr_signature.png is present and readable.
+Verification: after deploy, run `health_check` URL — we'll extend it (Gap 8 fix) to verify `hr_signature.png` is present and readable on the bench. Extension adds these keys to the JSON response:
+
+```json
+{
+  "hr_signature_image_path": "/home/frappe/...img/hr_signature.png",
+  "hr_signature_image_exists": true,
+  "hr_signature_image_size_bytes": 12345
+}
+```
+
+If `hr_signature_image_exists: false`, PDF-only letters will render but fall back to text-only "[Authorised Signatory]" placeholder. HR can re-upload the image and re-run `health_check` to confirm.
 
 ---
 
@@ -335,7 +420,9 @@ End-to-end smoke (local): render each of the 7 templates with FakeDoc, save PDFs
 
 ## 11. Definition of done
 
-- ✅ 10 custom fields auto-installed via fixtures on `bench migrate`
+- ✅ 12 custom fields auto-installed via fixtures on `bench migrate`
+- ✅ 2 Client Scripts (Promotion + Service Cert buttons) auto-installed via `fixtures/client_script.json`
+- ✅ Health check confirms `hr_signature.png` present on bench
 - ✅ All 7 HTML templates render valid PDFs locally + on Frappe Cloud
 - ✅ `dispatch_offer_letter()` correctly branches by `custom_offer_type`
 - ✅ Consultant + Intern offers go through Zoho Sign successfully (live test each)
@@ -364,6 +451,8 @@ End-to-end smoke (local): render each of the 7 templates with FakeDoc, save PDFs
 | `custom_offer_type` migration on existing Job Offers | Low | Default value "Full-time" — existing offers behave identically. |
 | HR signature image file is missing on Frappe Cloud bench | Medium | Pre-flight check in health_check; if missing, PDF falls back to text-only signature ("[Authorised Signatory]") |
 | Increment Letter triggers on EVERY SSA submit (including initial salary creation, not just increments) | Medium | HR controls via `custom_send_increment_letter` checkbox on SSA (default checked). Plus defensive check: if no previous SSA exists OR new CTC ≤ previous CTC, skip with a log warning. |
+| Promotion / Service Cert buttons visible to wrong users | Low | Client Script gates visibility to `HR Manager` OR `System Manager` roles (Gap 9). Backend handler also enforces role check via `frappe.get_roles()`. |
+| Background job (enqueued letter generation) silently fails | Low | All errors logged to `Error Log` with title `greytHR Letter Generation Error`. Retrieveable via existing `get_recent_errors` endpoint. |
 
 ---
 
@@ -424,3 +513,13 @@ User must approve this spec before implementation begins.
 - [Frappe HR DocType: Job Offer](https://docs.frappe.io/hr/job-offer)
 - [Frappe HR DocType: Salary Structure Assignment](https://docs.frappe.io/hr/salary-structure-assignment)
 - [Frappe HR DocType: Employee Separation](https://docs.frappe.io/hr/employee-separation)
+
+---
+
+## Revision log
+
+| Rev | Date | Change |
+|---|---|---|
+| 1 | 2026-05-22 | Initial draft |
+| 2 | 2026-05-22 | Self-review found inconsistency: added `custom_send_increment_letter` field that was referenced in §12 but missing from §5. Now 11 fields. |
+| 3 | 2026-05-22 | Re-check found 11 gaps. Applied all 11 fixes: (1) added `custom_annual_ctc` to SSA so Increment Letter can compute old vs new CTC reliably — now 12 fields total; (2) Promotion dialog captures both old + new designation; (3) added `fixtures/client_script.json` for Promotion + Service Cert buttons; (4) hooks.py doc_events block shown explicitly in §3; (5) DOJ field stays mandatory, used semantically as Start Date for Consultant/Intern; (6) ALL PDF-only letter handlers use `frappe.enqueue(queue="short")`; (7) email delivery uses fallback chain (with `prefer_personal_email` for separation letters); (8) health_check extended to verify hr_signature.png presence; (9) button visibility restricted to HR Manager / System Manager; (10) Increment skip logic made explicit (checkbox + no-prior-SSA + delta <= 0); (11) Consultant/Intern context builders are INDEPENDENT, not derived from offer context. |
