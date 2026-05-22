@@ -129,6 +129,8 @@ Single-element JSON array (Frappe fixture convention) containing one Workspace r
   "title": "greytHR",
   "label": "greytHR",
   "module": "greytHR",
+  "app": "greythr_bridge",
+  "for_user": "",
   "public": 1,
   "is_hidden": 0,
   "icon": "mail",
@@ -137,14 +139,20 @@ Single-element JSON array (Frappe fixture convention) containing one Workspace r
     {"type": "DocType", "link_to": "Job Offer",
      "label": "New Employee Offer", "color": "Blue",
      "url": "/app/job-offer/new?custom_offer_type=Employee"},
-    {"type": "DocType", "link_to": "Job Offer",
-     "label": "New Consultant Offer", "color": "Blue",
-     "url": "/app/job-offer/new?custom_offer_type=Consultant"},
-    ...14 more shortcut rows...
+    {"type": "DocType", "link_to": "greytHR Settings",
+     "label": "greytHR Settings", "color": "Grey",
+     "url": "/app/greythr-settings"},
+    ...13 more shortcut rows...
   ]
  }
 ]
 ```
+
+**Critical Frappe v16 requirements (learned the hard way):**
+
+- **`app` field is required** — even though the Workspace doctype JSON does not mark it mandatory, the `Removing orphan Workspaces` cleanup step at the end of every `bench migrate` deletes any Workspace whose `app` is empty. Set it to the app name (`greythr_bridge`).
+- **`type` enum is strict** — Workspace Shortcut accepts only `DocType`, `Report`, `Page`, `Dashboard Chart`. There is no `URL` type. For a shortcut to a Single doctype where we want the URL workaround for [frappe#37623](https://github.com/frappe/frappe/issues/37623), keep `type: "DocType"` AND `link_to: "<Single Doctype Name>"`, then add the explicit `url` field — the URL field overrides the click destination, the `link_to` keeps Frappe's validator happy.
+- **`for_user: ""`** — explicit empty string for public workspaces. Some v16.x versions require the key to be present.
 
 ### 5.2 `hooks.py` — one new fixtures entry
 

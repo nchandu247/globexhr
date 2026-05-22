@@ -5,6 +5,8 @@
   "title": "greytHR",
   "label": "greytHR",
   "module": "greytHR",
+  "app": "greythr_bridge",
+  "for_user": "",
   "public": 1,
   "is_hidden": 0,
   "icon": "mail",
@@ -60,7 +62,8 @@
     "url": "/app/employee-separation/new?custom_send_experience_letter=1&custom_send_relieving_letter=1"
    },
    {
-    "type": "URL",
+    "type": "DocType",
+    "link_to": "greytHR Settings",
     "label": "greytHR Settings",
     "color": "Grey",
     "url": "/app/greythr-settings"

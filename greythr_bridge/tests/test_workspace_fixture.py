@@ -50,11 +50,14 @@ class TestWorkspaceFixture(unittest.TestCase):
 
     def test_required_top_level_fields_present(self):
         ws = _load_workspace()
-        for key in ("doctype", "name", "module", "public", "shortcuts"):
+        for key in ("doctype", "name", "module", "app", "public", "shortcuts"):
             self.assertIn(key, ws, f"Workspace missing required field: {key}")
         self.assertEqual(ws["doctype"], "Workspace")
         self.assertEqual(ws["name"], "greytHR")
         self.assertEqual(ws["module"], "greytHR")
+        self.assertEqual(ws["app"], "greythr_bridge",
+                         "Frappe v16 requires `app` on Workspace, else the "
+                         "'Removing orphan Workspaces' migrate step deletes it.")
         self.assertEqual(ws["public"], 1)
 
     def test_exactly_15_shortcuts(self):
@@ -70,6 +73,35 @@ class TestWorkspaceFixture(unittest.TestCase):
             self.assertTrue(sc.get("url"), f"Shortcut {i} ({sc.get('label')}) missing url")
             self.assertTrue(sc["url"].startswith("/app/"),
                             f"Shortcut {i} url must start with /app/: {sc['url']}")
+
+    # Frappe v15/v16 Workspace Shortcut child-table `type` enum.
+    # Anything outside this set causes the workspace insert to roll back silently.
+    _VALID_SHORTCUT_TYPES = {"DocType", "Report", "Page", "Dashboard Chart"}
+
+    def test_every_shortcut_type_is_valid_enum(self):
+        """Frappe rejects shortcuts with `type` outside the allowed enum
+        (no `URL` type exists). Validation failure rolls back the whole
+        Workspace insert silently — caught us once already."""
+        ws = _load_workspace()
+        for i, sc in enumerate(ws["shortcuts"]):
+            self.assertIn(
+                sc.get("type"), self._VALID_SHORTCUT_TYPES,
+                f"Shortcut {i} ({sc.get('label')}) has invalid type "
+                f"{sc.get('type')!r}. Allowed: {sorted(self._VALID_SHORTCUT_TYPES)}"
+            )
+
+    def test_doctype_shortcuts_have_link_to(self):
+        """When `type` is `DocType`, the `link_to` field is required by
+        Frappe's child-table validator. The explicit `url` field overrides
+        the click destination but doesn't relax this requirement."""
+        ws = _load_workspace()
+        for i, sc in enumerate(ws["shortcuts"]):
+            if sc.get("type") == "DocType":
+                self.assertTrue(
+                    sc.get("link_to"),
+                    f"Shortcut {i} ({sc.get('label')}) has type=DocType "
+                    f"but no link_to — Frappe will reject this."
+                )
 
     # Phase A custom fields created via the live-site UI but never round-tripped
     # back to fixtures/custom_field.json. They exist on the live site and are

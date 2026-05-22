@@ -302,3 +302,18 @@ Builds on the Phase A offer-letter pipeline. Two letter families:
 - ⬜ **Live-site verification (post-deploy):** Fetch + Update Bench + Migrate; refresh `/app`; confirm `greytHR` sidebar entry appears with 15 cards and each card lands on the expected URL.
 
 **Workspace authoring caveat:** This workspace is shipped as a fixture and is system-managed. Edits made via the in-browser Workspace Editor will be overwritten on the next `bench migrate`. All future workspace changes should go via PR to `fixtures/workspace.json`.
+
+### Workspace v2 — fixes for Frappe v16 fixture-loader rejection
+
+First deploy of the workspace fixture did NOT appear in the sidebar. Root cause was two stacked bugs:
+
+1. **Missing top-level `app` field** — Frappe v16 runs a `Removing orphan Workspaces` step at the end of every `bench migrate` that deletes any Workspace whose `app` is empty. Our fixture set `module` but not `app`, so the workspace was inserted then immediately removed in the same migrate.
+2. **Invalid shortcut `type: "URL"`** on the greytHR Settings card — Frappe v15/v16 Shortcut child-table `type` enum only accepts `DocType`, `Report`, `Page`, `Dashboard Chart`. The invented `URL` value caused the whole Workspace insert to roll back silently.
+
+Fixes shipped:
+
+- ✅ Added `"app": "greythr_bridge"` and `"for_user": ""` to the workspace top-level record
+- ✅ Changed greytHR Settings shortcut: `type: "DocType"` + `link_to: "greytHR Settings"` + explicit `url: "/app/greythr-settings"` (the url field overrides the click destination, working around bug [frappe#37623](https://github.com/frappe/frappe/issues/37623) for Single doctypes while keeping the validator happy)
+- ✅ Two new test assertions added — `test_every_shortcut_type_is_valid_enum` and `test_doctype_shortcuts_have_link_to` — would have caught both bugs before deploy. Plus `test_required_top_level_fields_present` now asserts `app == "greythr_bridge"`.
+- ✅ Test suite: **124 passing** (was 122), 3 skipped
+- ✅ Spec updated (§5.1) to document the v16-required `app` field and the correct Single-doctype shortcut shape, so the next reader doesn't repeat the same mistake.
