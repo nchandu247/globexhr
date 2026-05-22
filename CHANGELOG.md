@@ -335,3 +335,22 @@ Fix:
 - ✅ Spec §5 rewritten to document the per-module folder convention and the root cause, so future contributors don't reinvent the same fixture-based mistake.
 
 **Reference:** Frappe HR's recruitment workspace lives at [hrms/hr/workspace/recruitment/recruitment.json](https://github.com/frappe/hrms/blob/develop/hrms/hr/workspace/recruitment/recruitment.json) — same convention.
+
+### Workspace v4 — add `content` blob to actually render cards
+
+After v3 fixed the file location, the sidebar entry appeared and the URL resolved — but the workspace page got stuck on skeleton placeholders that never resolved into cards. Source-verified root cause: Frappe v16 renders the workspace from a separate `content` field (a stringified JSON array of widget descriptors), NOT from the `shortcuts[]` child table directly. The renderer is `editor.render({ blocks: this.content || [] })` — null content means empty editor blocks, which means `remove_page_skeleton()` is never called.
+
+Earlier spec said "omit `content` so Frappe auto-generates it." That was wrong for v16: auto-generation only happens when a Workspace is saved via the in-browser editor; file-loaded workspaces have null `content` forever.
+
+Fix:
+
+- ✅ Added a `content` field to `greythr.json` — a stringified JSON array of 21 widgets: 6 section headers (col=12, one per lifecycle group) + 15 shortcut tiles (col=4, three per row). All `shortcut_name` values match `shortcuts[].label` exactly.
+- ✅ Test file updated:
+  - Removed `test_no_content_blob` (which actively asserted the wrong thing)
+  - Added `test_content_present_and_well_formed` — content exists, parses as JSON array, non-empty
+  - Added `test_content_widget_shape` — every widget has id/type/data + valid type enum + col
+  - Added `test_content_shortcut_names_match_shortcut_labels` — every `shortcut_name` in content must match a label in `shortcuts[]` (catches the next likely silent-failure: empty cards from typos)
+- ✅ Spec §5.3 updated with the v4 correction (and explicit warning that earlier "omit content" guidance was wrong)
+- ✅ Test suite: **126 passing** (was 124), 3 skipped
+
+**Reference:** widget schema verified against [hrms/payroll/workspace/payroll/payroll.json](https://github.com/frappe/hrms/blob/develop/hrms/payroll/workspace/payroll/payroll.json) and Frappe v16 renderer source at [workspace.js](https://github.com/frappe/frappe/blob/develop/frappe/public/js/frappe/views/workspace/workspace.js).

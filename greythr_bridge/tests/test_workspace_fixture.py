@@ -146,12 +146,71 @@ class TestWorkspaceDefinition(unittest.TestCase):
                     f"_PHASE_A_LIVE_ONLY_FIELDS.)"
                 )
 
-    def test_no_content_blob(self):
-        """Per spec §5.1: omit `content` so Frappe auto-generates layout
-        from shortcuts[] order. Including it courts drift."""
+    def test_content_present_and_well_formed(self):
+        """v4 correction: `content` IS required for the workspace to render.
+        Frappe v16 only auto-generates `content` when saved via the in-browser
+        editor — file-loaded workspaces have null content and render as stuck
+        skeleton placeholders. The renderer code is `editor.render({blocks:
+        this.content || []})` — null content → empty editor → never resolves."""
         ws = _load_workspace()
-        self.assertNotIn("content", ws,
-                         "Do not include `content` field — Frappe auto-generates it.")
+        self.assertIn("content", ws,
+                      "`content` field is required; without it the page is "
+                      "stuck on skeleton loaders.")
+        # `content` is stored as a stringified JSON array
+        self.assertIsInstance(ws["content"], str,
+                              "`content` must be a string (stringified JSON).")
+        content = json.loads(ws["content"])
+        self.assertIsInstance(content, list,
+                              "`content` must parse as a JSON array of widget dicts.")
+        self.assertGreater(len(content), 0, "`content` array must not be empty.")
+
+    _VALID_WIDGET_TYPES = {
+        "header", "shortcut", "card", "chart", "number_card",
+        "quick_list", "spacer", "paragraph", "onboarding",
+    }
+
+    def test_content_widget_shape(self):
+        """Every widget in `content` must have id, type (from valid enum),
+        and data with at least a `col` value."""
+        ws = _load_workspace()
+        content = json.loads(ws["content"])
+        seen_ids = set()
+        for i, w in enumerate(content):
+            self.assertIn("id", w, f"Widget {i} missing id")
+            self.assertIn("type", w, f"Widget {i} missing type")
+            self.assertIn("data", w, f"Widget {i} missing data")
+            self.assertNotIn(w["id"], seen_ids,
+                             f"Widget {i} has duplicate id {w['id']}")
+            seen_ids.add(w["id"])
+            self.assertIn(w["type"], self._VALID_WIDGET_TYPES,
+                          f"Widget {i} has invalid type {w['type']!r}. "
+                          f"Allowed: {sorted(self._VALID_WIDGET_TYPES)}")
+            self.assertIn("col", w["data"],
+                          f"Widget {i} ({w['type']}) data missing `col`")
+
+    def test_content_shortcut_names_match_shortcut_labels(self):
+        """Every `shortcut`-type widget in `content` must reference a
+        `shortcut_name` that exactly matches a `label` in the `shortcuts[]`
+        child table. Mismatches produce silent empty cards on the page."""
+        ws = _load_workspace()
+        content = json.loads(ws["content"])
+        shortcut_labels = {s["label"] for s in ws["shortcuts"]}
+        referenced = {
+            w["data"].get("shortcut_name")
+            for w in content if w["type"] == "shortcut"
+        }
+        unmatched = referenced - shortcut_labels
+        self.assertFalse(
+            unmatched,
+            f"content widgets reference unknown shortcuts: {unmatched}. "
+            f"Every shortcut_name must match a shortcuts[].label exactly."
+        )
+        unused = shortcut_labels - referenced
+        self.assertFalse(
+            unused,
+            f"shortcuts[] has labels not referenced in content: {unused}. "
+            f"They won't render on the page. Add a shortcut widget to content."
+        )
 
     def test_hooks_fixtures_list_does_NOT_include_workspace(self):
         """Workspace must NOT be in hooks.py fixtures list. Shipping via

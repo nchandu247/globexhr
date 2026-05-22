@@ -174,6 +174,11 @@ Reference layout: [hrms/hr/workspace/recruitment/recruitment.json](https://githu
 - **Shortcut `type` enum is strict** — accepts only `DocType`, `Report`, `Page`, `Dashboard Chart`. No `URL` type. For URL-only shortcuts (workaround for [frappe#37623](https://github.com/frappe/frappe/issues/37623) on Singles), use `type: "DocType"` + `link_to: "<Doctype Name>"` + explicit `url` field. The `url` overrides the click destination; `link_to` keeps the validator happy.
 - **`for_user: ""`** — explicit empty string for public workspaces.
 - **JSON is a single dict** — `greythr.json` body is `{...}` not `[{...}]`. The `import_file.py` loader expects a single record.
+- **`content` field is REQUIRED for rendering** — this is the v4 correction. Earlier drafts said "omit content so Frappe auto-generates it." That was wrong. Frappe v16 only auto-generates `content` when a Workspace is saved via the in-browser editor; file-loaded workspaces have null `content` and render as stuck skeleton placeholders ([workspace.js](https://github.com/frappe/frappe/blob/develop/frappe/public/js/frappe/views/workspace/workspace.js): `editor.render({blocks: this.content || []})` → null gives empty editor → `remove_page_skeleton()` never fires).
+
+  Format: `content` is a **stringified JSON array** of widget descriptors. Each widget: `{id, type, data}`. Widget `type` enum: `header`, `shortcut`, `card`, `chart`, `number_card`, `quick_list`, `spacer`, `paragraph`, `onboarding`. `data.col` is the Bootstrap column span (12 = full width, 4 = third). For `shortcut` widgets, `data.shortcut_name` must exactly match a `label` in the `shortcuts[]` child table — mismatches produce silent empty cards.
+
+  Our `content` blob has 21 widgets: 6 section headers (col=12) + 15 shortcut tiles (col=4 → 3 per row). Pattern follows [hrms/payroll/workspace/payroll/payroll.json](https://github.com/frappe/hrms/blob/develop/hrms/payroll/workspace/payroll/payroll.json).
 
 ### 5.4 `hooks.py` — NO Workspace fixture entry
 
