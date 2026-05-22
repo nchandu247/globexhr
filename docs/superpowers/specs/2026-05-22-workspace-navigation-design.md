@@ -115,59 +115,80 @@ Plain `/app/<doctype-name>` URLs for the Operations group. Singles use `/app/gre
 
 ---
 
-## 5. Fixture mechanics
+## 5. Fixture mechanics — per-module folder, NOT fixtures
 
-### 5.1 New file: `greythr_bridge/fixtures/workspace.json`
+> **Critical correction (post-v2 deploy):** Public app-owned Workspaces are NOT shipped via `fixtures/` in Frappe v16. They live in a per-module folder convention. Earlier drafts of this spec used the fixtures approach and the workspace was silently deleted on every migrate by Frappe's `remove_orphan_entities()` cleanup. Source: [`frappe/model/sync.py`](https://github.com/frappe/frappe/blob/develop/frappe/model/sync.py).
 
-Single-element JSON array (Frappe fixture convention) containing one Workspace record. Hand-authored from a minimal template — no `content` layout blob (Frappe auto-generates one from the `shortcuts` array on first save). Approximate shape:
+### 5.1 Correct file layout
 
-```json
-[
- {
-  "doctype": "Workspace",
-  "name": "greytHR",
-  "title": "greytHR",
-  "label": "greytHR",
-  "module": "greytHR",
-  "app": "greythr_bridge",
-  "for_user": "",
-  "public": 1,
-  "is_hidden": 0,
-  "icon": "mail",
-  "sequence_id": 50,
-  "shortcuts": [
-    {"type": "DocType", "link_to": "Job Offer",
-     "label": "New Employee Offer", "color": "Blue",
-     "url": "/app/job-offer/new?custom_offer_type=Employee"},
-    {"type": "DocType", "link_to": "greytHR Settings",
-     "label": "greytHR Settings", "color": "Grey",
-     "url": "/app/greythr-settings"},
-    ...13 more shortcut rows...
-  ]
- }
-]
+```
+greythr_bridge/
+  greythr/                        ← module folder (scrubbed name; already exists)
+    workspace/                    ← NEW
+      __init__.py                 ← NEW (empty)
+      greythr/                    ← NEW (folder name = scrub("greytHR") = "greythr")
+        __init__.py               ← NEW (empty)
+        greythr.json              ← the Workspace record, single dict (not array)
 ```
 
-**Critical Frappe v16 requirements (learned the hard way):**
+The JSON body — single dict, not wrapped in `[ ]`:
 
-- **`app` field is required** — even though the Workspace doctype JSON does not mark it mandatory, the `Removing orphan Workspaces` cleanup step at the end of every `bench migrate` deletes any Workspace whose `app` is empty. Set it to the app name (`greythr_bridge`).
-- **`type` enum is strict** — Workspace Shortcut accepts only `DocType`, `Report`, `Page`, `Dashboard Chart`. There is no `URL` type. For a shortcut to a Single doctype where we want the URL workaround for [frappe#37623](https://github.com/frappe/frappe/issues/37623), keep `type: "DocType"` AND `link_to: "<Single Doctype Name>"`, then add the explicit `url` field — the URL field overrides the click destination, the `link_to` keeps Frappe's validator happy.
-- **`for_user: ""`** — explicit empty string for public workspaces. Some v16.x versions require the key to be present.
+```json
+{
+ "doctype": "Workspace",
+ "name": "greytHR",
+ "title": "greytHR",
+ "label": "greytHR",
+ "module": "greytHR",
+ "app": "greythr_bridge",
+ "for_user": "",
+ "public": 1,
+ "is_hidden": 0,
+ "icon": "mail",
+ "sequence_id": 50,
+ "shortcuts": [
+   {"type": "DocType", "link_to": "Job Offer",
+    "label": "New Employee Offer", "color": "Blue",
+    "url": "/app/job-offer/new?custom_offer_type=Employee"},
+   {"type": "DocType", "link_to": "greytHR Settings",
+    "label": "greytHR Settings", "color": "Grey",
+    "url": "/app/greythr-settings"},
+   ...13 more shortcut rows...
+ ]
+}
+```
 
-### 5.2 `hooks.py` — one new fixtures entry
+### 5.2 Why this layout (root cause of v1/v2 failures)
+
+Frappe's `bench migrate` runs (in order):
+1. `Syncing fixtures...` — loads fixture files from `hooks.py`. If we put `workspace.json` here, the record IS inserted.
+2. `Removing orphan Workspaces` — at the end of every migrate, scans the DB for public Workspaces with `module` + `app` set, then deletes any whose name doesn't match a file under `<installed-app>/**/workspace/**/*.json`.
+
+If our Workspace is in `fixtures/`, the glob `**/workspace/**/*.json` does NOT match (path needs a `workspace/` folder in the middle). So the record gets inserted in step 1 and deleted in step 2 — every single migrate. The migrate log shows no error because both steps "succeed" individually.
+
+Reference layout: [hrms/hr/workspace/recruitment/recruitment.json](https://github.com/frappe/hrms/blob/develop/hrms/hr/workspace/recruitment/recruitment.json) — Frappe HR uses exactly this convention.
+
+### 5.3 Critical Frappe v16 record-shape requirements
+
+- **`app` field required** — set to `greythr_bridge`. The orphan-removal filter is `{"public": 1, "module": ["is", "set"], "app": ["is", "set"]}`; without `app`, the record isn't even in the candidate set (so it survives the cleanup), but Frappe v16 ALSO needs `app` for sidebar rendering. Set it.
+- **Shortcut `type` enum is strict** — accepts only `DocType`, `Report`, `Page`, `Dashboard Chart`. No `URL` type. For URL-only shortcuts (workaround for [frappe#37623](https://github.com/frappe/frappe/issues/37623) on Singles), use `type: "DocType"` + `link_to: "<Doctype Name>"` + explicit `url` field. The `url` overrides the click destination; `link_to` keeps the validator happy.
+- **`for_user: ""`** — explicit empty string for public workspaces.
+- **JSON is a single dict** — `greythr.json` body is `{...}` not `[{...}]`. The `import_file.py` loader expects a single record.
+
+### 5.4 `hooks.py` — NO Workspace fixture entry
 
 ```python
 fixtures = [
     {"dt": "DocType", "filters": [["module", "=", "greytHR"]]},
     {"dt": "Custom Field", "filters": [...]},
     {"dt": "Client Script", "filters": [["module", "=", "greytHR"]]},
-    {"dt": "Workspace", "filters": [["module", "=", "greytHR"]]},   # NEW
+    # NO Workspace entry — see §5.2
 ]
 ```
 
-### 5.3 No patch needed
+### 5.5 No patch needed
 
-Earlier draft proposed a one-shot patch to handle workspace duplication. On review, the `name` column is the MariaDB primary key, so two Workspace rows named `greytHR` can't coexist — the fixture loader does INSERT...ON DUPLICATE KEY UPDATE. The historical [frappe#36872](https://github.com/frappe/frappe/issues/36872) bug duplicates child-table *shortcut* rows under a single workspace, and is patched in recent v16.x. If shortcut duplication is observed post-deploy, the manual remediation is one minute in the in-browser Workspace Editor (delete the extra rows, save) — not worth a patch.
+Earlier draft proposed a one-shot patch to handle workspace duplication. On review, the `name` column is the MariaDB primary key, so two Workspace rows named `greytHR` can't coexist. The historical [frappe#36872](https://github.com/frappe/frappe/issues/36872) bug duplicates child-table *shortcut* rows under a single workspace, and is patched in recent v16.x. If shortcut duplication is observed post-deploy, the manual remediation is one minute in the in-browser Workspace Editor (delete the extra rows, save) — not worth a patch.
 
 ---
 

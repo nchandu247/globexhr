@@ -25,11 +25,11 @@ fixtures = [
         "dt": "Client Script",
         "filters": [["module", "=", "greytHR"]],
     },
-    # Navigation — left-sidebar workspace with letter + ops shortcuts
-    {
-        "dt": "Workspace",
-        "filters": [["module", "=", "greytHR"]],
-    },
+    # NOTE: Workspace is NOT shipped as a fixture in v16. Public app-owned
+    # Workspaces live in greythr/workspace/<scrubbed-name>/<scrubbed-name>.json
+    # (the per-module-folder convention used by Frappe HR / ERPNext). Shipping
+    # via fixtures causes Frappe's "Removing orphan Workspaces" step to delete
+    # the record at the end of every migrate.
 ]
 
 # Scheduled jobs

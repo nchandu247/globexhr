@@ -1,12 +1,20 @@
 """
-Offline validation of the greytHR Workspace fixture.
+Offline validation of the greytHR Workspace definition.
 
-These tests parse fixtures/workspace.json directly — no Frappe runtime
-needed. They protect against:
+Per Frappe v16 convention, the Workspace lives in the per-module folder:
+    greythr_bridge/greythr/workspace/greythr/greythr.json
+
+NOT in fixtures/. Shipping via fixtures triggers Frappe's "Removing orphan
+Workspaces" step at the end of migrate, which deletes the record.
+
+These tests run offline (no Frappe runtime) and protect against:
   - JSON syntax errors (trailing commas, missing brackets)
   - Drift between shortcut URLs and the custom fields they reference
   - Card-count mismatch with the spec
-  - Module-filter mismatch with hooks.py
+  - Frappe v16 validator violations (invalid shortcut `type`, missing
+    `link_to`, missing top-level `app`)
+  - Accidentally re-adding the workspace to hooks.py fixtures (which
+    would re-trigger orphan deletion)
 """
 import json
 import os
@@ -14,8 +22,9 @@ import re
 import unittest
 
 
-FIXTURE_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "fixtures", "workspace.json")
+WORKSPACE_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..",
+                 "greythr", "workspace", "greythr", "greythr.json")
 )
 CUSTOM_FIELD_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "fixtures", "custom_field.json")
@@ -23,14 +32,17 @@ CUSTOM_FIELD_PATH = os.path.normpath(
 HOOKS_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "hooks.py")
 )
+OLD_FIXTURE_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "fixtures", "workspace.json")
+)
 
 
 def _load_workspace():
-    with open(FIXTURE_PATH) as f:
+    with open(WORKSPACE_PATH) as f:
         data = json.load(f)
-    assert isinstance(data, list) and len(data) == 1, \
-        "workspace.json must be a single-element JSON array"
-    return data[0]
+    assert isinstance(data, dict), \
+        "Per-module workspace JSON must be a single dict (not a list)"
+    return data
 
 
 def _load_custom_fields():
@@ -38,14 +50,20 @@ def _load_custom_fields():
         return json.load(f)
 
 
-class TestWorkspaceFixture(unittest.TestCase):
-    """Validate greythr_bridge/fixtures/workspace.json against the spec."""
+class TestWorkspaceDefinition(unittest.TestCase):
+    """Validate greythr_bridge/greythr/workspace/greythr/greythr.json."""
 
-    def test_fixture_file_exists(self):
-        self.assertTrue(os.path.exists(FIXTURE_PATH),
-                        f"Missing fixture: {FIXTURE_PATH}")
+    def test_workspace_file_in_per_module_location(self):
+        """Workspace MUST live in <module>/workspace/<name>/<name>.json
+        per Frappe v16 convention. fixtures/workspace.json is wrong and
+        triggers orphan-removal."""
+        self.assertTrue(os.path.exists(WORKSPACE_PATH),
+                        f"Missing workspace at {WORKSPACE_PATH}")
+        self.assertFalse(os.path.exists(OLD_FIXTURE_PATH),
+                         f"Old fixture path still exists: {OLD_FIXTURE_PATH} "
+                         f"— delete it. Frappe's orphan-removal will kill it.")
 
-    def test_json_parses_cleanly(self):
+    def test_json_parses_cleanly_as_dict(self):
         _load_workspace()
 
     def test_required_top_level_fields_present(self):
@@ -74,14 +92,12 @@ class TestWorkspaceFixture(unittest.TestCase):
             self.assertTrue(sc["url"].startswith("/app/"),
                             f"Shortcut {i} url must start with /app/: {sc['url']}")
 
-    # Frappe v15/v16 Workspace Shortcut child-table `type` enum.
-    # Anything outside this set causes the workspace insert to roll back silently.
     _VALID_SHORTCUT_TYPES = {"DocType", "Report", "Page", "Dashboard Chart"}
 
     def test_every_shortcut_type_is_valid_enum(self):
         """Frappe rejects shortcuts with `type` outside the allowed enum
         (no `URL` type exists). Validation failure rolls back the whole
-        Workspace insert silently — caught us once already."""
+        Workspace insert silently."""
         ws = _load_workspace()
         for i, sc in enumerate(ws["shortcuts"]):
             self.assertIn(
@@ -105,8 +121,7 @@ class TestWorkspaceFixture(unittest.TestCase):
 
     # Phase A custom fields created via the live-site UI but never round-tripped
     # back to fixtures/custom_field.json. They exist on the live site and are
-    # used by the Monitor cards, but the test can't see them. Remove entries
-    # from this allowlist as the fields get added to the fixture.
+    # used by the Monitor cards, but the test can't see them.
     _PHASE_A_LIVE_ONLY_FIELDS = {
         "custom_zoho_sign_request_id",
         "custom_zoho_sign_signed_at",
@@ -138,16 +153,17 @@ class TestWorkspaceFixture(unittest.TestCase):
         self.assertNotIn("content", ws,
                          "Do not include `content` field — Frappe auto-generates it.")
 
-    def test_hooks_fixtures_list_includes_workspace(self):
-        """hooks.py fixtures list must include a Workspace entry filtered
-        to module=greytHR — otherwise migrate won't load the fixture."""
+    def test_hooks_fixtures_list_does_NOT_include_workspace(self):
+        """Workspace must NOT be in hooks.py fixtures list. Shipping via
+        fixtures causes Frappe to insert the record then delete it in
+        the same migrate via 'Removing orphan Workspaces'."""
         with open(HOOKS_PATH) as f:
             hooks_source = f.read()
-        self.assertRegex(
+        self.assertNotRegex(
             hooks_source,
-            r'"dt"\s*:\s*"Workspace"[\s\S]*?"module"[\s\S]*?"greytHR"',
-            "hooks.py fixtures list must include "
-            "{'dt': 'Workspace', 'filters': [['module', '=', 'greytHR']]}"
+            r'"dt"\s*:\s*"Workspace"',
+            "Remove the {'dt': 'Workspace', ...} entry from hooks.py. "
+            "Workspaces use per-module folder convention, not fixtures."
         )
 
 

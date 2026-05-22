@@ -317,3 +317,21 @@ Fixes shipped:
 - ✅ Two new test assertions added — `test_every_shortcut_type_is_valid_enum` and `test_doctype_shortcuts_have_link_to` — would have caught both bugs before deploy. Plus `test_required_top_level_fields_present` now asserts `app == "greythr_bridge"`.
 - ✅ Test suite: **124 passing** (was 122), 3 skipped
 - ✅ Spec updated (§5.1) to document the v16-required `app` field and the correct Single-doctype shortcut shape, so the next reader doesn't repeat the same mistake.
+
+### Workspace v3 — root cause was the wrong file location, not the JSON
+
+Even after v2 fixes (`app` field + valid shortcut type), the workspace STILL did not appear post-migrate. Deep source-code investigation (`frappe/model/sync.py`) found the real root cause:
+
+**Public app-owned Workspaces are not shipped via `fixtures/` in Frappe v16.** They live in a per-module folder convention. Frappe HR, ERPNext, Insights and Builder all use this layout. Our `fixtures/workspace.json` was being inserted in the `Syncing fixtures...` step, then deleted seconds later in the `Removing orphan Workspaces` step of the SAME migrate, because the orphan-cleanup glob `<app>/**/workspace/**/*.json` didn't match `<app>/fixtures/workspace.json`.
+
+Fix:
+
+- ✅ **Deleted** `greythr_bridge/fixtures/workspace.json`
+- ✅ **Created** `greythr_bridge/greythr/workspace/greythr/greythr.json` (single dict, not array)
+- ✅ **Created** `greythr_bridge/greythr/workspace/__init__.py` and `.../greythr/__init__.py` (empty)
+- ✅ **Removed** the `{"dt": "Workspace", ...}` entry from `hooks.py` fixtures list
+- ✅ Test file updated to validate the new path and to assert hooks.py does NOT include Workspace
+- ✅ Test suite: still 124 passing, 3 skipped
+- ✅ Spec §5 rewritten to document the per-module folder convention and the root cause, so future contributors don't reinvent the same fixture-based mistake.
+
+**Reference:** Frappe HR's recruitment workspace lives at [hrms/hr/workspace/recruitment/recruitment.json](https://github.com/frappe/hrms/blob/develop/hrms/hr/workspace/recruitment/recruitment.json) — same convention.
