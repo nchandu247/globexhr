@@ -25,6 +25,11 @@ fixtures = [
         "dt": "Client Script",
         "filters": [["module", "=", "greytHR"]],
     },
+    # Navigation — left-sidebar workspace with letter + ops shortcuts
+    {
+        "dt": "Workspace",
+        "filters": [["module", "=", "greytHR"]],
+    },
 ]
 
 # Scheduled jobs

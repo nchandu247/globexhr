@@ -1,0 +1,119 @@
+[
+ {
+  "doctype": "Workspace",
+  "name": "greytHR",
+  "title": "greytHR",
+  "label": "greytHR",
+  "module": "greytHR",
+  "public": 1,
+  "is_hidden": 0,
+  "icon": "mail",
+  "sequence_id": 50,
+  "shortcuts": [
+   {
+    "type": "DocType",
+    "link_to": "Job Offer",
+    "label": "New Employee Offer",
+    "color": "Blue",
+    "url": "/app/job-offer/new?custom_offer_type=Employee"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Job Offer",
+    "label": "New Consultant Offer",
+    "color": "Blue",
+    "url": "/app/job-offer/new?custom_offer_type=Consultant"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Job Offer",
+    "label": "New Intern Offer",
+    "color": "Blue",
+    "url": "/app/job-offer/new?custom_offer_type=Intern"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Salary Structure Assignment",
+    "label": "New Salary Revision",
+    "color": "Green",
+    "url": "/app/salary-structure-assignment/new?custom_send_increment_letter=1"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Employee",
+    "label": "Generate Promotion Letter",
+    "color": "Yellow",
+    "url": "/app/employee"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Employee",
+    "label": "Generate Service Certificate",
+    "color": "Yellow",
+    "url": "/app/employee?status=Active"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Employee Separation",
+    "label": "New Separation (Experience / Relieving)",
+    "color": "Red",
+    "url": "/app/employee-separation/new?custom_send_experience_letter=1&custom_send_relieving_letter=1"
+   },
+   {
+    "type": "URL",
+    "label": "greytHR Settings",
+    "color": "Grey",
+    "url": "/app/greythr-settings"
+   },
+   {
+    "type": "DocType",
+    "link_to": "greytHR Sync Log",
+    "label": "Sync Logs",
+    "color": "Grey",
+    "url": "/app/greythr-sync-log"
+   },
+   {
+    "type": "DocType",
+    "link_to": "greytHR Employee Mapping",
+    "label": "Employee Mappings",
+    "color": "Grey",
+    "url": "/app/greythr-employee-mapping"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Error Log",
+    "label": "Error Log (greytHR)",
+    "color": "Grey",
+    "url": "/app/error-log?title=%5B%22like%22%2C%22greytHR%25%22%5D"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Job Offer",
+    "label": "Pending Signatures",
+    "color": "Orange",
+    "url": "/app/job-offer?custom_zoho_sign_request_id=%5B%22is%22%2C%22set%22%5D&custom_zoho_sign_signed_at=%5B%22is%22%2C%22not+set%22%5D"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Job Offer",
+    "label": "Recently Signed",
+    "color": "Green",
+    "url": "/app/job-offer?custom_zoho_sign_signed_at=%5B%22is%22%2C%22set%22%5D"
+   },
+   {
+    "type": "DocType",
+    "link_to": "greytHR Sync Log",
+    "label": "Sync Failures",
+    "color": "Red",
+    "url": "/app/greythr-sync-log?status=Failed"
+   },
+   {
+    "type": "DocType",
+    "link_to": "Error Log",
+    "label": "Letter Errors",
+    "color": "Red",
+    "url": "/app/error-log?title=%5B%22like%22%2C%22%25Letter%25%22%5D"
+   }
+  ]
+ }
+]

@@ -281,3 +281,24 @@ Builds on the Phase A offer-letter pipeline. Two letter families:
 - Local smoke test: rendered all 7 templates outside Frappe with realistic contexts — all parsed cleanly, no undefined variables.
 
 - ⬜ **End-to-end test on live site (post-deploy):** Verify each of the 7 letter types end-to-end — fetch + bench update + migrate, then trigger each flow and confirm PDF/attachment/email.
+
+---
+
+## [Unreleased] — Workspace Navigation (2026-05-22)
+
+### Workspace — left-sidebar navigation hub
+
+- ✅ **`greythr_bridge/fixtures/workspace.json`** — single Workspace record `greytHR`, auto-installed on `bench migrate` via fixtures filter `module=greytHR`. 15 shortcut cards arranged by employee lifecycle:
+  - **Onboarding** (3): New Employee / Consultant / Intern Offer — each opens a new Job Offer with `custom_offer_type` pre-selected via URL param
+  - **Compensation** (1): New Salary Revision — opens new SSA with the increment-letter checkbox pre-ticked
+  - **Recognition** (2): Promotion Letter, Service Certificate — link to the Employee list; per-employee Client Script buttons handle the trigger
+  - **Exit** (1): New Separation — opens new Employee Separation with both Experience and Relieving checkboxes pre-ticked
+  - **Operations** (4): greytHR Settings, Sync Logs, Employee Mappings, Error Log (filtered to greytHR titles)
+  - **Monitor** (4): Pending Signatures, Recently Signed, Sync Failures, Letter Errors — all filtered list views via URL-encoded operator arrays
+- ✅ **`hooks.py`** — added `{"dt": "Workspace", "filters": [["module", "=", "greytHR"]]}` to the fixtures list
+- ✅ **`tests/test_workspace_fixture.py`** — 8 offline validation tests: JSON parses, 15 shortcuts present, every `custom_*` URL token references a fieldname in `custom_field.json` (with allowlist for two Phase A live-only fields not yet exported), no `content` blob, hooks.py fixtures list updated
+- ✅ Test suite: **122 passing** (was 114), 3 skipped
+- ⚠️ **Known gap:** `custom_zoho_sign_request_id` and `custom_zoho_sign_signed_at` exist on the live site (created via Customize Form during Phase A) but are not yet in `fixtures/custom_field.json`. Tracked in the test allowlist `_PHASE_A_LIVE_ONLY_FIELDS`. Separate PR will round-trip them so fresh environments install identically.
+- ⬜ **Live-site verification (post-deploy):** Fetch + Update Bench + Migrate; refresh `/app`; confirm `greytHR` sidebar entry appears with 15 cards and each card lands on the expected URL.
+
+**Workspace authoring caveat:** This workspace is shipped as a fixture and is system-managed. Edits made via the in-browser Workspace Editor will be overwritten on the next `bench migrate`. All future workspace changes should go via PR to `fixtures/workspace.json`.
