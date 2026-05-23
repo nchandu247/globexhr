@@ -391,3 +391,42 @@ When the second `set_value` hit the missing column, MariaDB rolled back the **en
 - ⬜ **Stranded offers recovery (post-deploy):** HR to call `force_complete_offer` for Megahna Reddy (HR-OFF-2026-00004) and Rajyalakshmi Nalluri (HR-OFF-2026-00003) once this fix is live — the endpoint now uses `_safe_set_value` so it actually persists status + signed_at instead of silently rolling back.
 
 **Why this matters beyond Zoho Sign:** the `_safe_set_value` pattern (check meta before SQL + commit-per-field) is a general defense against the "missing custom field rolls back the whole transaction" trap. Any future webhook or background job that writes multiple fields in one handler should follow the same pattern.
+
+---
+
+## [Unreleased] — Employee Data Integrity, Phase 1 (2026-05-23)
+
+### Read-only audit endpoint for ghost / unmapped Employees
+
+Discovered while investigating workspace cards: Frappe Employee `HR-EMP-00684` opens with all fields blank (first_name, last_name, email, date_of_joining empty). Counter at 684 but only 332 records exist — 352 were deleted historically. Root cause: `pull_employees.py` accepts greytHR rows where critical fields are null/missing (mapper records `_mapping_errors` but doesn't gate creation), then `frappe.new_doc("Employee")` with `ignore_mandatory=True` creates a half-empty "ghost" record.
+
+User-specified hard constraint: greytHR is production payroll; no Employee or `greytHR Employee Mapping` deletion at any stage. Saved as memory rule `never_delete_employee_records.md`.
+
+Approved plan: 6 phases, all non-destructive — read-only audit → heal at greytHR source → prevent new ghosts in pull code → UI fixes for `GDS####` display and ghost filtering → data-quality dashboard → missing-48 investigation. Full plan committed to `docs/superpowers/specs/2026-05-23-employee-data-integrity-plan.md`.
+
+This commit implements **Phase 1 only** — the read-only audit. No data touched.
+
+- ✅ **`greythr_bridge/utils/data_quality.py`** — new module. Single endpoint `list_ghost_employees()` (whitelisted; restricted to HR Manager / System Manager) returns three categories:
+  - `ghosts` — Employees with blank `first_name` (created by pull task from incomplete greytHR data)
+  - `mapped_clean` — Employees with first_name AND a greytHR mapping (well-formed records)
+  - `frappe_only` — Employees with first_name but NO greytHR mapping (manually created, never synced)
+  - Plus a `summary` with counts of each category and total mappings
+  - Three `frappe.get_all()` calls (Employees with no first_name, Employees with first_name, Employee Mappings). Zero writes.
+- ✅ **`greythr_bridge/tests/test_data_quality.py`** — 5 offline tests including a critical invariant: `test_list_ghost_employees_does_not_write_to_db` spies on every write method (`set_value`, `sql`, `delete`, `commit`, `rollback`, `new_doc`, `delete_doc`, `rename_doc`) and asserts none were called.
+- ✅ **`greythr_bridge/tests/conftest.py`** — small fix: `patch_frappe` fixture now also resets `side_effect` on commonly-scripted mocks (`get_all`, `db.set_value`) so iterator state from one test doesn't leak into the next and cause StopIteration.
+- ✅ Test suite: **134 passing** (was 129), 3 skipped.
+
+**How to use after deploy:**
+
+Call from any HR Manager session:
+```
+/api/method/greythr_bridge.utils.data_quality.list_ghost_employees
+```
+
+Returns JSON. HR reviews counts and per-record details, then proceeds with **Phase 2** (open each ghost in greytHR portal, fill missing data; next 15-min sync auto-heals Frappe via the existing update path). No code change needed for Phase 2 — HR action only.
+
+**Next phases** (separate commits, only after Phase 1 audit reviewed):
+- Phase 3: code guard in `_sync_one` to skip new ghosts going forward
+- Phase 4: UI fixes (employee_number column in Employee list, autocomplete filter, hide ghosts from pickers)
+- Phase 5: data-quality dashboard cards on the workspace
+- Phase 6: missing-48 investigation (read-only diff against greytHR API)

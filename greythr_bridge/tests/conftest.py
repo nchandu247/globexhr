@@ -57,6 +57,12 @@ def settings():
 def patch_frappe(settings):
     """Wire frappe.get_single to return the mock settings for every test."""
     frappe_mock.reset_mock()  # clear call_args_list accumulated from previous tests
+    # reset_mock() does NOT clear side_effect — explicitly null the ones that
+    # tests commonly script with side_effect lists (otherwise iterators from
+    # one test leak into the next and cause StopIteration).
+    frappe_mock.get_all.side_effect = None
+    frappe_mock.get_all.return_value = None
+    frappe_mock.db.set_value.side_effect = None
     frappe_mock.get_single.return_value = settings
     frappe_mock.logger.return_value.info = MagicMock()
     yield frappe_mock
