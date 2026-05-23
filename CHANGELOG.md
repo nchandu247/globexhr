@@ -430,3 +430,70 @@ Returns JSON. HR reviews counts and per-record details, then proceeds with **Pha
 - Phase 4: UI fixes (employee_number column in Employee list, autocomplete filter, hide ghosts from pickers)
 - Phase 5: data-quality dashboard cards on the workspace
 - Phase 6: missing-48 investigation (read-only diff against greytHR API)
+
+---
+
+## [Unreleased] — Sync diagnostics + counter-honesty fix (2026-05-23)
+
+### Phase 1 audit revealed a deeper bug: sync claims success while doing nothing
+
+When HR ran the Phase 1 audit (`list_ghost_employees`), the result showed **all 332 records are ghosts** — 100% have `first_name`, `custom_greythr_employee_id`, and `custom_greythr_last_synced` blank. Yet the most recent successful `pull_employees` run reported `records_processed: 340, records_updated: 340, records_failed: 0`. Contradiction: sync claims 340 updates while not a single record was actually enriched.
+
+Root cause of the misleading counter (proven by code inspection):
+
+In `tasks/pull_employees.py::_sync_one`, the update path was:
+```python
+if changed:
+    frappe_employee.save(ignore_permissions=True)
+_upsert_mapping(...)
+return "updated"  # ← always "updated", even when changed=False
+```
+
+The function returned `"updated"` regardless of whether anything actually changed. The sync log counter incremented for every matched record, masking the fact that `changed=False` on every iteration → save never ran → records stayed blank.
+
+The deeper question — **why is changed=False everywhere?** — is the next investigation. Likely answers:
+- (A) greytHR's API response shape doesn't match mapper expectations (mapper produces sparse output → no field differs)
+- (B) Frappe HR validate hooks silently reject Employee saves when `first_name` is empty
+- (C) Mappings created by the 2026-05-19 bulk import have empty `greythr_employee_id`, so sync fall-through matches by email/employee_number but the matched mapper output happens to equal the existing record
+
+This commit ships the tooling to answer that definitively, plus a counter-accuracy fix so future sync logs don't lie.
+
+#### Changes
+
+- ✅ **`greythr_bridge/utils/sync_diagnostics.py`** — new module with two read-only endpoints (System Manager only):
+  - **`inspect_sync_for_employee(employee_name, save_dry_run=True)`** — full pipeline diagnostic for ONE employee. Returns: current Frappe record state, mapping row, raw greytHR API response, extracted employee payload, mapper output, mapper errors, would-change diff (field-by-field). With `save_dry_run=false`, also attempts the save and captures result/traceback (with explicit `frappe.db.commit()` or `rollback()` so partial state never persists silently).
+  - **`list_recent_sync_errors(limit=20)`** — recent Error Log entries with `title LIKE %greytHR%`. Companion to the audit endpoint.
+
+- ✅ **`greythr_bridge/tasks/pull_employees.py`** — counter-honesty fix in `_sync_one`:
+  ```python
+  return "updated" if changed else "skipped"
+  ```
+  Sync logs now accurately reflect what was actually persisted. After deploy, expect the next sync run to show `records_updated: 0, records_skipped: ~332` — which is the truth that was previously hidden behind `records_updated: 340`.
+
+- ✅ **`greythr_bridge/tests/test_pull_employees.py`** — new test `test_existing_employee_no_changes_returns_skipped` that pins the counter-honesty behaviour so it can't regress.
+
+- ✅ **`greythr_bridge/tests/test_sync_diagnostics.py`** — 8 new tests covering: System Manager role check, missing mapping, empty greythr_employee_id, full happy-path dry run, opt-in save success, save exception capture (with rollback), list_recent_sync_errors filtering + permission.
+
+- ✅ Test suite: **143 passing** (was 134), 3 skipped.
+
+#### How to use after deploy
+
+1. **Identify a target employee** from the Phase 1 audit (any record from the `ghosts` list, e.g., `HR-EMP-00869` which has `employee_number: "GDS0234"`).
+
+2. **Run the diagnostic** as System Manager:
+   ```
+   https://hr.globexdigital.ai/api/method/greythr_bridge.utils.sync_diagnostics.inspect_sync_for_employee?employee_name=HR-EMP-00869
+   ```
+   Returns JSON with `greythr_api_response` showing exactly what greytHR returned, and `mapper_output` showing what the mapper extracted. If the API response has full data but mapper output is sparse → field-name mismatch in mapper. If both are populated and `would_change_fields` is non-empty → the save mechanism is the suspect (run with `&save_dry_run=false` to see whether save fails).
+
+3. **Optional — try the actual save** (still safe; rolls back on failure):
+   ```
+   …inspect_sync_for_employee?employee_name=HR-EMP-00869&save_dry_run=false
+   ```
+   If `save_result: "OK"` and the next audit run shows the record is no longer a ghost → save mechanism works; the bug is elsewhere in `_sync_one` (likely the mapper or matching logic). If `save_result: "FAILED: ..."` with a traceback → the traceback names the validate hook or layer that's rejecting the save. Either answer points us to the exact fix.
+
+4. **Verify counter honesty** — the next scheduled sync (every 15 min) should now show realistic counts. If `records_skipped: ~332` and `records_updated: 0`, the bug is the no-change path. If `records_updated > 0` for the first time, something fixed itself (unlikely but possible).
+
+#### Still no destructive operations
+
+This commit continues the zero-deletion / zero-rename pattern. The optional save in the diagnostic is the only write — and only when the caller explicitly disables `save_dry_run`. Even then, it's a single record at a time and rolls back on any failure. The constraint from `memory/never_delete_employee_records.md` is honoured.

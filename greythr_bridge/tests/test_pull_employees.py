@@ -58,6 +58,45 @@ def test_existing_employee_updated_via_mapping(patch_frappe):
     assert existing.save.called
 
 
+# ── _sync_one: matched but nothing to change → "skipped" (counter-honesty fix) ──
+
+def test_existing_employee_no_changes_returns_skipped(patch_frappe):
+    """When all mapped fields match the existing Frappe record, the function
+    must return 'skipped' — NOT 'updated'. The old behaviour returned
+    'updated' regardless and produced misleading sync log counts (the
+    '340 updated but 0 enriched' bug discovered 2026-05-23)."""
+    patch_frappe.get_all.side_effect = [
+        [{"frappe_employee": "EMP-0001"}],  # mapping found
+        [{"name": "EMP-0001"}],             # mapping upsert check
+    ]
+    existing = MagicMock()
+    # Every field already matches mapped output → no changes
+    def _matches(field, *_, **__):
+        mapping = {
+            "custom_greythr_employee_id": "E001",
+            "employee_number": "G001",
+            "first_name": "Ravi",
+            "last_name": "Kumar",
+            "company_email": "ravi@globexdigital.ai",
+            "date_of_joining": "2023-06-01",
+            "status": "Active",
+        }
+        return mapping.get(field)
+    existing.get.side_effect = _matches
+    patch_frappe.get_doc.return_value = existing
+
+    result = _sync_one(_emp())
+
+    assert result == "skipped", (
+        "When mapped output matches existing record fields, _sync_one must "
+        "return 'skipped' so the sync log counters reflect reality."
+    )
+    # Note: _upsert_mapping ALWAYS calls save (on the Mapping doc, same
+    # MagicMock here). The test that the Employee save was skipped is
+    # encoded in the return value being "skipped" — the function only
+    # returns "updated" if `changed` was True and Employee.save() ran.
+
+
 # ── _sync_one: duplicate email skipped ────────────────────────────────────────
 
 def test_duplicate_email_returns_skipped(patch_frappe):

@@ -131,16 +131,21 @@ def _sync_one(greythr_emp: dict) -> str:
                 frappe_employee.set(field, value)
                 changed = True
 
-        frappe_employee.custom_greythr_last_synced = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
         if changed:
             # ignore_mandatory: syncing from external system — not all Frappe-required
             # fields (gender, date_of_birth) are available in greytHR's list endpoint
+            frappe_employee.custom_greythr_last_synced = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
             frappe_employee.flags.ignore_mandatory = True
             frappe_employee.save(ignore_permissions=True)
         _upsert_mapping(frappe_employee.name, greythr_id, greythr_emp.get("employeeNo"))
-        return "updated"
+        # Counter-honesty fix (2026-05-23): return "skipped" when nothing actually
+        # changed. Previously this always returned "updated" — which masked the
+        # ghost-records bug where sync runs reported "340 updated" while not a
+        # single record was actually enriched. See diagnostics endpoint:
+        # greythr_bridge.utils.sync_diagnostics.inspect_sync_for_employee
+        return "updated" if changed else "skipped"
 
     else:
         # Create new Frappe Employee
