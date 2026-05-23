@@ -1,13 +1,17 @@
 """
-Manual-trigger handlers for letters issued from the Employee form.
+Handlers for the Employee doctype.
 
-These are whitelisted methods invoked from Client Scripts (buttons) on the
-Employee form:
-  - send_promotion_letter: requires old/new designation + effective date + notes
-  - send_service_certificate: just needs the employee_name argument
+Two responsibilities:
 
-Both restricted to System Manager / HR Manager roles. All work runs in
-background jobs so the dialog returns immediately.
+1. Manual-trigger letter generation (Promotion, Service Certificate) — these
+   are whitelisted methods invoked from Client Scripts (buttons) on the
+   Employee form. Restricted to System Manager / HR Manager. Work runs in
+   background jobs so the dialog returns immediately.
+
+2. Naming hook (`set_name_from_greythr_id`) — fires on `Employee.before_insert`
+   (wired in hooks.py). When `employee_number` is set, uses it as the Frappe
+   primary key so HR sees matching IDs across both systems. Otherwise falls
+   back to Frappe HR's default naming series (HR-EMP-####).
 """
 from datetime import date
 import frappe
@@ -18,6 +22,30 @@ from ..letters.merger import (
 )
 from ..letters.non_signing import generate_and_deliver
 from ..utils.logging import log_error
+
+
+# ── Naming hook ────────────────────────────────────────────────────────────────
+
+def set_name_from_greythr_id(doc, method=None):
+    """
+    Use greytHR's employee_number as the Frappe Employee primary key (name).
+
+    Fires on Employee.before_insert (registered in hooks.py). Idempotent:
+    only sets `doc.name` if employee_number is populated AND name is not
+    already set. Falls through to Frappe HR's default naming series
+    (HR-EMP-####) when employee_number is empty — preserves HR's ability to
+    manually create Employee records before a greytHR ID is assigned.
+
+    Defense-in-depth: tasks/pull_employees.py also sets doc.name explicitly
+    for sync-created records. This hook covers manual UI creates + any other
+    code path.
+    """
+    if doc.employee_number and not doc.name:
+        doc.name = doc.employee_number
+        # Tell Frappe naming logic to skip autoname (defensive — set_new_name
+        # in Frappe also checks `if not doc.name`, but flags.name_set is
+        # the explicit "I know what I'm doing" signal).
+        doc.flags.name_set = True
 
 
 def _check_hr_role():

@@ -178,6 +178,16 @@ def _sync_one(greythr_emp: dict) -> str:
     else:
         # Create new Frappe Employee
         doc = frappe.new_doc("Employee")
+        # Use greytHR's employee_number as the Frappe primary key so HR sees
+        # matching IDs across both systems. Falls back to Frappe HR's default
+        # naming series (HR-EMP-####) only when employee_number is empty.
+        # Defense-in-depth: hooks_handlers.employee.set_name_from_greythr_id
+        # (a before_insert hook) does the same — this explicit set protects
+        # the sync path even if the hook is somehow disabled.
+        emp_no = mapped.get("employee_number")
+        if emp_no:
+            doc.name = emp_no
+            doc.flags.name_set = True
         for field, value in mapped.items():
             if field.startswith("_"):
                 continue

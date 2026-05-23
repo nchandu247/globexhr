@@ -54,6 +54,12 @@ doc_events = {
     "Employee Separation": {
         "on_submit": "greythr_bridge.hooks_handlers.employee_separation.on_separation_submitted",
     },
+    # Employee naming: use greytHR's employee_number as the Frappe primary key
+    # so HR sees matching IDs across both systems. Falls back to default
+    # naming series (HR-EMP-####) when employee_number is empty.
+    "Employee": {
+        "before_insert": "greythr_bridge.hooks_handlers.employee.set_name_from_greythr_id",
+    },
     # Promotion + Service Certificate are MANUAL buttons (Client Scripts in
     # fixtures/client_script.json), not auto-triggered — no doc_event needed.
 }

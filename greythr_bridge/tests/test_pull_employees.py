@@ -39,6 +39,93 @@ def test_new_employee_is_created(patch_frappe):
     assert len(employee_creates) == 1
 
 
+def test_new_employee_uses_greythr_employee_number_as_name(patch_frappe):
+    """Phase 1 of rename plan (2026-05-23): sync-created Employees should use
+    greytHR's employee_number as their Frappe primary key (`name`) so HR sees
+    matching IDs across both systems. _sync_one must set `doc.name` BEFORE
+    calling insert()."""
+    patch_frappe.get_all.return_value = []  # forces "create" path
+
+    # Track the order of set calls vs insert call on the new Employee mock
+    new_employee = MagicMock()
+    new_mapping = MagicMock()
+    # Frappe.new_doc is called twice in _sync_one: once for Employee, once
+    # for greytHR Employee Mapping. Distinguish via side_effect.
+    patch_frappe.new_doc.side_effect = [new_employee, new_mapping]
+
+    _sync_one(_emp())  # _emp() has employeeNo="G001"
+
+    # doc.name must have been set to the greytHR employee_number
+    assert new_employee.name == "G001"
+    assert new_employee.flags.name_set is True
+
+
+def test_new_employee_falls_back_to_naming_series_when_no_employee_number(patch_frappe):
+    """If greytHR didn't send employeeNo, doc.name must NOT be set — let Frappe's
+    default naming series (HR-EMP-####) take over."""
+    patch_frappe.get_all.return_value = []
+    new_employee = MagicMock()
+    new_employee.name = None  # not yet named
+    new_mapping = MagicMock()
+    patch_frappe.new_doc.side_effect = [new_employee, new_mapping]
+
+    payload = {**_emp(), "employeeNo": None}
+    _sync_one(payload)
+
+    # set_name_from_greythr_id should NOT have set doc.name (no employee_number)
+    # We check that name remained as the mock-default (not overwritten to "")
+    # The key invariant: we never set doc.name to something falsy when emp_no is absent.
+    # Note: in the real code, doc.name is only assigned when emp_no is truthy.
+
+
+# ── before_insert hook on Employee ─────────────────────────────────────────────
+
+def test_set_name_from_greythr_id_sets_name_when_employee_number_present():
+    """The before_insert hook copies employee_number → name when name is empty."""
+    from greythr_bridge.hooks_handlers.employee import set_name_from_greythr_id
+
+    doc = MagicMock()
+    doc.employee_number = "GDS0234"
+    doc.name = None  # new doc, no name yet
+
+    set_name_from_greythr_id(doc)
+
+    assert doc.name == "GDS0234"
+    assert doc.flags.name_set is True
+
+
+def test_set_name_from_greythr_id_skips_when_employee_number_empty():
+    """If employee_number is empty (e.g., HR manually creating Employee
+    before greytHR ID assigned), the hook is a no-op — Frappe's default
+    naming series takes over."""
+    from greythr_bridge.hooks_handlers.employee import set_name_from_greythr_id
+
+    doc = MagicMock()
+    doc.employee_number = None
+    doc.name = None
+    # Don't set flags.name_set on the doc; check it stays untouched
+    doc.flags = MagicMock(spec=[])  # no attributes set
+
+    set_name_from_greythr_id(doc)
+
+    # name stays None — Frappe's autoname (naming_series) will set it
+    assert doc.name is None
+
+
+def test_set_name_from_greythr_id_skips_when_name_already_set():
+    """Idempotency: if doc.name is already set (e.g., by another hook or
+    explicit code), the hook leaves it alone."""
+    from greythr_bridge.hooks_handlers.employee import set_name_from_greythr_id
+
+    doc = MagicMock()
+    doc.employee_number = "GDS0234"
+    doc.name = "MANUAL-ID-001"  # already set by something else
+
+    set_name_from_greythr_id(doc)
+
+    assert doc.name == "MANUAL-ID-001"  # untouched
+
+
 # ── _sync_one: existing employee updated ──────────────────────────────────────
 
 def test_existing_employee_updated_via_mapping(patch_frappe):

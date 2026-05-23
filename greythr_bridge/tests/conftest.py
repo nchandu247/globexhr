@@ -62,6 +62,9 @@ def patch_frappe(settings):
     # one test leak into the next and cause StopIteration).
     frappe_mock.get_all.side_effect = None
     frappe_mock.get_all.return_value = None
+    frappe_mock.new_doc.side_effect = None
+    frappe_mock.new_doc.return_value = MagicMock()
+    frappe_mock.get_doc.side_effect = None
     frappe_mock.db.set_value.side_effect = None
     frappe_mock.get_single.return_value = settings
     frappe_mock.logger.return_value.info = MagicMock()
