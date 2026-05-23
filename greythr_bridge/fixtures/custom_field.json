@@ -284,5 +284,54 @@
   "insert_after": "custom_promotion_letter_attached",
   "module": "greytHR",
   "description": "Date of the most recent Service Certificate issued for this employee."
+ },
+
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_greythr_employee_id",
+  "dt": "Employee",
+  "fieldname": "custom_greythr_employee_id",
+  "label": "greytHR Employee ID",
+  "fieldtype": "Data",
+  "read_only": 1,
+  "insert_after": "employee_number",
+  "module": "greytHR",
+  "description": "greytHR's internal employee UUID (e.g. '270'). Set by pull_employees sync — used to look up Frappe records by greytHR identity. Read-only — do not edit manually."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_greythr_last_synced",
+  "dt": "Employee",
+  "fieldname": "custom_greythr_last_synced",
+  "label": "greytHR Last Synced",
+  "fieldtype": "Datetime",
+  "read_only": 1,
+  "insert_after": "custom_greythr_employee_id",
+  "module": "greytHR",
+  "description": "Timestamp of the last successful pull from greytHR for this record. Null = never synced. Read-only."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_greythr_full_name",
+  "dt": "Employee",
+  "fieldname": "custom_greythr_full_name",
+  "label": "greytHR Full Name (Source)",
+  "fieldtype": "Data",
+  "read_only": 1,
+  "insert_after": "custom_greythr_last_synced",
+  "module": "greytHR",
+  "description": "Original combined name string from greytHR (e.g. 'Gandla Sanjeev'). Preserved verbatim for audit when Frappe's first_name/last_name are auto-split. Read-only."
+ },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee-custom_fit_to_rehire",
+  "dt": "Employee",
+  "fieldname": "custom_fit_to_rehire",
+  "label": "Fit to Rehire",
+  "fieldtype": "Check",
+  "default": "0",
+  "insert_after": "custom_greythr_full_name",
+  "module": "greytHR",
+  "description": "HR's rehire eligibility flag for ex-employees. Pulled from greytHR's fitToBeRehired field on the separation endpoint."
  }
 ]

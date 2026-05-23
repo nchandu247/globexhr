@@ -1,4 +1,26 @@
+"""
+Convert greytHR employee records to Frappe Employee field values.
+
+Field decisions:
+  - email → company_email (confirmed work email from greytHR)
+  - leavingDate non-null OR leftorg=true → status "Left"
+  - fitToBeRehired → custom_fit_to_rehire (HR decision: capture this field)
+  - onboardingStatus → intentionally ignored (Frappe HR owns onboarding)
+  - designation → intentionally skipped here (Link to Designation doctype;
+    needs target records to pre-exist — handled in a separate task)
+  - Dates: try BOTH `dd-MM-yyyy` (legacy) AND ISO `yyyy-MM-dd` (what greytHR
+    actually returns in 2026) — verified via diagnostic on 2026-05-23
+"""
 from datetime import datetime
+
+
+# greytHR returns single-letter gender; Frappe HR's `gender` is a Link
+# to the `Gender` doctype which uses full names.
+_GENDER_MAP = {
+    "M": "Male",
+    "F": "Female",
+    "O": "Other",
+}
 
 
 def greythr_to_frappe(greythr_employee: dict) -> dict:
@@ -6,44 +28,69 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
     Convert a greytHR employee record to Frappe Employee field values.
 
     Returns a dict of fields ready to set on a Frappe Employee document.
-    Fields missing from greytHR are omitted — never overwrites Frappe fields with None.
-    A '_mapping_errors' key lists fields that could not be mapped; caller decides
-    whether to skip or proceed with the partial result.
-
-    Field decisions:
-      - email → company_email (confirmed work email from greytHR)
-      - leavingDate non-null → status "Left" (no separate separation endpoint call needed)
-      - fitToBeRehired → custom_fit_to_rehire (HR decision: capture this field)
-      - onboardingStatus → intentionally ignored (Frappe HR owns onboarding)
-      - Dates: greytHR dd-MM-yyyy → Frappe YYYY-MM-DD (converted here, never in caller)
+    Fields missing from greytHR are omitted — never overwrites Frappe fields
+    with None. A '_mapping_errors' key lists fields that could not be mapped;
+    caller decides whether to skip or proceed with the partial result.
     """
     errors = []
     result = {}
 
     # ── identity ──────────────────────────────────────────────────────────────
+    # greytHR returns employeeId as INTEGER (e.g. 270). Frappe Data field
+    # expects string. Stringify defensively so save() doesn't silently coerce.
     if emp_id := greythr_employee.get("employeeId"):
-        result["custom_greythr_employee_id"] = emp_id
+        result["custom_greythr_employee_id"] = str(emp_id)
     else:
         errors.append("employeeId missing — cannot create mapping")
 
     if emp_no := greythr_employee.get("employeeNo"):
         result["employee_number"] = emp_no
 
-    # ── name — use decomposed fields, never parse the full 'name' string ───────
+    # ── name — fallback chain for greytHR's combined name field ───────────────
+    # Diagnostic on 2026-05-23 confirmed greytHR's /employees/{id} endpoint
+    # returns firstName/lastName/middleName as NULL, with the full name in
+    # the combined `name` field (e.g., "Gandla Sanjeev"). Default strategy:
+    # put the full name into first_name and leave last_name empty. Indian
+    # naming conventions vary; HR can manually split important records.
+    # The original combined value is also preserved in custom_greythr_full_name
+    # for audit/verification.
     if first := greythr_employee.get("firstName"):
         result["first_name"] = first
+        if last := greythr_employee.get("lastName"):
+            result["last_name"] = last
+        if middle := greythr_employee.get("middleName"):
+            result["middle_name"] = middle
+    elif full_name := greythr_employee.get("name"):
+        # Whole name into first_name. last_name stays empty.
+        result["first_name"] = full_name.strip()
     else:
-        errors.append("firstName missing")
+        errors.append("firstName and name both missing — record will have no name")
 
-    if last := greythr_employee.get("lastName"):
-        result["last_name"] = last
-
-    if middle := greythr_employee.get("middleName"):
-        result["middle_name"] = middle
+    if full_name := greythr_employee.get("name"):
+        result["custom_greythr_full_name"] = full_name.strip()
 
     # ── contact ───────────────────────────────────────────────────────────────
     if email := greythr_employee.get("email"):
         result["company_email"] = email
+
+    if personal := greythr_employee.get("personalEmail"):
+        result["personal_email"] = personal
+
+    if mobile := greythr_employee.get("mobile"):
+        # Frappe Employee uses `cell_number` for mobile
+        result["cell_number"] = str(mobile)
+
+    # ── demographics ──────────────────────────────────────────────────────────
+    if g := greythr_employee.get("gender"):
+        if g in _GENDER_MAP:
+            result["gender"] = _GENDER_MAP[g]
+        else:
+            errors.append(f"gender: unrecognised value {g!r}")
+
+    if dob := greythr_employee.get("dateOfBirth"):
+        parsed = _parse_date(dob, errors, field="dateOfBirth")
+        if parsed:
+            result["date_of_birth"] = parsed
 
     # ── dates ─────────────────────────────────────────────────────────────────
     if doj := greythr_employee.get("dateOfJoin"):
@@ -51,10 +98,13 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
         if parsed:
             result["date_of_joining"] = parsed
 
-    # ── status — inferred from leavingDate on the employee list ───────────────
-    # leavingDate present on the main employee list — no separate separation call needed.
-    # Only set status="Left" if we can also set relieving_date; Frappe requires both.
+    # ── status — inferred from leavingDate AND/OR leftorg ─────────────────────
+    # greytHR exposes two signals: leavingDate (the date) and leftorg (boolean).
+    # Status="Left" requires Frappe's relieving_date to be set, so we only mark
+    # Left when we have a parseable leaving date. The leftorg flag is informational
+    # — without a date we can't satisfy Frappe's relieving_date requirement.
     leaving_date = greythr_employee.get("leavingDate")
+    left_org_flag = greythr_employee.get("leftorg") or greythr_employee.get("leftOrg")
     if leaving_date:
         parsed_ld = _parse_date(leaving_date, errors, field="leavingDate")
         if parsed_ld:
@@ -62,8 +112,12 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
             result["relieving_date"] = parsed_ld
         else:
             # Date unparseable — mark active to avoid Frappe's relieving_date validation.
-            # The mapping error is already recorded; HR can correct manually.
             result["status"] = "Active"
+    elif left_org_flag:
+        # leftorg=true but no leavingDate. Can't set status=Left without
+        # relieving_date. HR may need to add the date manually.
+        result["status"] = "Active"
+        errors.append("leftorg=true but no leavingDate — cannot set status=Left")
     else:
         result["status"] = "Active"
 
@@ -81,14 +135,21 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
 
 def _parse_date(date_str: str, errors: list, field: str = "date") -> str | None:
     """
-    Convert greytHR date format (dd-MM-yyyy) to Frappe format (YYYY-MM-DD).
-    Returns None and records an error if the string cannot be parsed.
-    Conversion always happens in the mapper — never in tasks or the API client.
+    Parse greytHR date string into Frappe format (YYYY-MM-DD).
+
+    greytHR has been observed returning dates in two formats:
+      - Legacy `dd-MM-yyyy` (e.g., "01-06-2023") — assumed by earlier code
+      - ISO `yyyy-MM-dd` (e.g., "2024-01-02") — what /employees/{id} actually
+        returns as of 2026-05-23 (confirmed via diagnostic)
+
+    Try both formats. Records error only if neither parses.
     """
     if not date_str:
         return None
-    try:
-        return datetime.strptime(date_str, "%d-%m-%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        errors.append(f"{field}: unrecognised date format {date_str!r}")
-        return None
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    errors.append(f"{field}: unrecognised date format {date_str!r}")
+    return None

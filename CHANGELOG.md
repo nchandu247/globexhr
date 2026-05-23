@@ -497,3 +497,119 @@ This commit ships the tooling to answer that definitively, plus a counter-accura
 #### Still no destructive operations
 
 This commit continues the zero-deletion / zero-rename pattern. The optional save in the diagnostic is the only write — and only when the caller explicitly disables `save_dry_run`. Even then, it's a single record at a time and rolls back on any failure. The constraint from `memory/never_delete_employee_records.md` is honoured.
+
+---
+
+## [Unreleased] — Employee mapper fixes + missing custom fields (2026-05-23)
+
+### Root cause finally pinned down: 3 custom fields don't exist + mapper expects wrong API shape
+
+The `inspect_sync_for_employee` diagnostic shipped earlier revealed two stacked bugs:
+
+**Bug 1: Three Employee custom fields the sync code writes to don't exist in Frappe meta at all.**
+Confirmed via DevTools (`cur_frm.meta.fields.find(...)` returned `NOT IN META` for all three):
+- `custom_greythr_employee_id` — referenced in pull_employees, mapper, data_quality, diagnostics
+- `custom_greythr_last_synced` — referenced in pull_employees
+- `custom_fit_to_rehire` — referenced in mapper
+
+Without the fields existing in meta, `frappe.db.set_value`/`doc.set()` accept the assignment in memory but the SQL UPDATE silently skips unknown columns. `save()` reports OK (no exception). `modified` timestamp updates. But the actual values never persist. Sync log says "340 updated" while not a single record has `custom_greythr_employee_id` populated.
+
+**Bug 2: greytHR's `/employees/{id}` response shape doesn't match what the mapper expects.**
+The diagnostic captured an actual greytHR response (Sanjeev Gandla, GDS0234):
+- `employeeId` returned as INTEGER (`270`), not string
+- `firstName`/`lastName`/`middleName` all NULL — full name in combined `name` field ("Gandla Sanjeev")
+- Dates in ISO `yyyy-MM-dd` format, not legacy `dd-MM-yyyy`
+- `gender: "M"` (Frappe HR's Gender Link doctype expects "Male"/"Female")
+- `mobile`, `personalEmail`, `dateOfBirth`, `leftorg` — useful fields the mapper ignored
+- `designation` is a Link field — values must pre-exist in Designation doctype (deferred to follow-up)
+
+Net effect: mapper produced a sparse output for every record. The few fields it did extract usually matched what was already in Frappe (e.g., `status: "Active"`), so `changed=False`, no save attempt, ghosts stayed ghosts.
+
+### Fixes shipped
+
+#### `greythr_bridge/fixtures/custom_field.json` — 4 new Employee fields
+
+- `custom_greythr_employee_id` (Data, read-only, after employee_number)
+- `custom_greythr_last_synced` (Datetime, read-only)
+- `custom_greythr_full_name` (Data, read-only) — preserves greytHR's original combined name string for audit
+- `custom_fit_to_rehire` (Check, default 0) — was already referenced in code
+
+All 4 auto-install on `bench migrate` via the existing fixtures filter (`module=greytHR`).
+
+#### `greythr_bridge/mappers/employee_mapper.py` — 9 bug fixes
+
+1. **Stringify integer `employeeId`** — `str(270)` not int 270
+2. **Name fallback chain** — prefer `firstName`/`lastName`/`middleName` if present (future-proof in case greytHR adds them); fall back to combined `name` field; full string goes into `first_name`, `last_name` stays empty (Indian naming conventions vary too much for safe automated split)
+3. **Preserve original combined name** in new `custom_greythr_full_name` field for audit
+4. **Dual date format support** in `_parse_date` — try `dd-MM-yyyy` then ISO `yyyy-MM-dd`
+5. **Gender mapping** — explicit `M → Male`, `F → Female`, `O → Other` lookup table (Frappe HR's `gender` is a Link to Gender doctype, not raw string)
+6. **dateOfBirth → date_of_birth** (new field mapping)
+7. **mobile → cell_number** (new field mapping)
+8. **personalEmail → personal_email** (new field mapping; null-preserving so Frappe edits aren't overwritten)
+9. **leftorg flag as fallback** for status=Left logic (used when leavingDate is null — but status only flips when relieving_date can be set, so leftorg-without-date stays Active with mapper error logged)
+
+Designation mapping intentionally **deferred** — it's a Link to the Designation doctype and would need target records to pre-exist (auto-create has side effects; will tackle in a follow-up after Designation pre-population).
+
+#### `greythr_bridge/tests/test_mappers.py` — 16 new tests
+
+- ISO date format parsing (both `_parse_date` direct + via greythr_to_frappe)
+- Integer employeeId stringification
+- Combined `name` → first_name fallback
+- Decomposed firstName/lastName takes priority when present
+- Full name preserved in custom_greythr_full_name
+- Date of birth ISO parsing
+- Gender M/F/Other → Male/Female/Other mapping
+- Unknown gender values omitted + logged (don't break Frappe Gender Link)
+- mobile → cell_number
+- personal_email null-preserving (omit not overwrite)
+- leftorg=true + leavingDate → status=Left + relieving_date set
+- leftorg=true without leavingDate → stays Active + error logged
+- leftOrg (camelCase variant) also accepted
+- End-to-end smoke test with real captured greytHR response → no blocking errors
+
+Test suite: **159 passing** (was 143), 3 skipped.
+
+### After deploy + migrate + 15-min sync — expected outcome
+
+| Before | After |
+|---|---|
+| All 332 records have `first_name: null` | first_name populated from greytHR `name` field (full combined name) |
+| All 332 records have `custom_greythr_employee_id: null` | Populated with stringified greytHR ID |
+| `custom_greythr_last_synced: null` everywhere | Populated with sync timestamp on every touched record |
+| Sync log: `records_updated: 340, records_changed_in_db: 0` (the lie) | Sync log: `records_updated: ~300, records_skipped: ~30` (the truth) |
+| `gender`, `date_of_birth`, `cell_number` mostly empty | Populated for every record greytHR has data for |
+| ~hundreds of ex-employees showing Active | Records with `leftorg: true` + parseable `leavingDate` correctly flip to `status: "Left"` |
+| Employee list shows blank name column | Real names visible |
+| SSA Employee autocomplete unusable | Works — search by name |
+| Workspace Recognition cards' Employee list unusable | Functional |
+
+### Operational caveats HR should know
+
+1. **Status flips to "Left" will happen automatically** for ex-employees who have a parseable leavingDate in greytHR. Frappe HR's Employee `on_update` may trigger side effects (disable linked User, exclude from active employee reports). This is correct behaviour — these employees genuinely left. But the volume may be noticeable on the first sync after this fix.
+
+2. **Edits to greytHR-managed fields in Frappe will be overwritten on next sync.** Reminder of the one-way sync rule: `firstName`/`name`, `email`, `dateOfJoin`, `leavingDate`, `gender`, `dateOfBirth`, `mobile`, `personalEmail` — all owned by greytHR. To correct any of these, edit in greytHR portal; the sync brings it back to Frappe within 15 minutes.
+
+3. **Data-quality issues at greytHR source remain** — 3 records have malformed `employee_number` values (`gds0115` lowercase, `Gds0943274` non-standard, `GSD0033` typo, `GDS034` missing leading zero). Those records still need HR cleanup in greytHR.
+
+### Known gap (deferred to follow-up)
+
+16 other custom fields are referenced in code but not in fixtures (`custom_basic_monthly`, `custom_hra_monthly`, salary breakdown fields used by Phase A offer letters; `custom_zoho_sign_nda_request_id`; `custom_signed_pdf_pushed`; `custom_address`). Phase A offer letters work today, so these fields presumably exist on live site (created via Customize Form, never round-tripped to fixtures) — but the same class of silent-failure could bite us. Separate audit + round-trip work to follow.
+
+### Verification commands after deploy
+
+1. Trigger a manual sync or wait 15 min for the scheduled run
+2. Check sync log at `/app/greythr-sync-log` — expect `records_updated > 200`, `records_skipped` small
+3. Re-run the diagnostic for HR-EMP-00869:
+   ```
+   /api/method/greythr_bridge.utils.sync_diagnostics.inspect_sync_for_employee?employee_name=HR-EMP-00869
+   ```
+   `frappe_record_now.first_name` should now be `"Gandla Sanjeev"`, `custom_greythr_employee_id` should be `"270"`, `status` should be `"Left"` (since leftorg=true + leavingDate parsed).
+4. Re-run the audit:
+   ```
+   /api/method/greythr_bridge.utils.data_quality.list_ghost_employees
+   ```
+   `summary.ghosts` should drop dramatically (from 332 toward ~0).
+
+### Zero deletions, zero renames
+
+This commit continues the pattern: no Employee or Mapping records deleted, no primary keys changed, no manual data manipulation. The 332 records get enriched in place by the sync once the mapper and fields are correct. Memory rule `never_delete_employee_records.md` honoured.
