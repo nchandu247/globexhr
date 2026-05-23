@@ -672,3 +672,60 @@ Either way, no code change needed — single-record diagnosis followed by either
 ### Zero destructive operations
 
 All three fixes are read-side or write-pattern changes — no data deleted, no schema changes, no record renames. Constraint from `memory/never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Mapper date-sanity guard for greytHR data quality issues (2026-05-23)
+
+### The last remaining ghost (HR-EMP-00683) traced to greytHR bad data
+
+After the mapper rewrite + 3-fix cleanup, 331 of 332 records were correctly enriched. The lone holdout (HR-EMP-00683 / GDS0022 / Nalluri suresh) wouldn't sync even though its mapping was fresh and the mapper produced rich output. Diagnostic via `inspect_sync_for_employee` revealed why:
+
+greytHR returns this employee with:
+- `dateOfJoin: "2017-11-12"`
+- `leavingDate: "2017-08-10"` ← **3 months BEFORE the joining date**
+- `leftorg: true`
+
+Frappe HR's `Employee.validate` hook enforces `relieving_date >= date_of_joining`. When sync tried to save with `status="Left"` + `relieving_date="2017-08-10"` + `date_of_joining="2017-11-12"`, validation rejected the save. The outer try/except caught the error and incremented `records_failed` — but the record was the only one out of 332 affected, so the failure was easy to miss.
+
+### Fix: defensive sanity check in the mapper
+
+`mappers/employee_mapper.py` — new sanity check after status/leaving-date logic. If `relieving_date < date_of_joining`:
+- Drop the impossible `relieving_date`
+- Force `status` back to `Active` (Frappe HR allows that)
+- Log to `_mapping_errors` with the employeeId and conflicting dates so HR can fix at the greytHR source
+
+Net behaviour: the record gets enriched with everything ELSE (first_name, gender, date_of_joining, custom_greythr_employee_id, etc.) and stays Active. HR can manually mark Left after correcting the dates in greytHR portal.
+
+### Why this fix is future-proof, not just one-record
+
+Any future greytHR record with inverted dates (data entry mistakes happen) would hit the same Frappe validate hook. The sanity check catches the entire class — sync no longer breaks on bad data, just logs and continues. Sync log's `records_failed` count drops to 0 for this class of error.
+
+### Tests
+
+- 170 passing (was 167), 3 skipped
+- 3 new tests in `test_mappers.py`:
+  - `test_relieving_before_joining_drops_relieving_keeps_active` — exact HR-EMP-00683 reproduction
+  - `test_relieving_equal_to_joining_is_allowed` — edge case (joined and left same day)
+  - `test_relieving_after_joining_unaffected` — normal case preserved
+
+### Net status after this commit
+
+**Data integrity epic complete.** 332/332 records will be syncable on the next scheduled run:
+- ~331 will continue enriching as before
+- HR-EMP-00683 will get its name, gender, joining date populated (status stays Active until HR fixes dates in greytHR)
+- All other future records with similar greytHR data quality issues will also sync gracefully
+
+Phase 4 (UI fixes), Phase 5 (Data Quality dashboard), Phase 6 (missing employees investigation — now confirmed to be zero) can all resume.
+
+### Operational note for HR
+
+After the next sync (~15 min after deploy), HR-EMP-00683 should have `first_name="Nalluri suresh"` populated. The record will remain Active until either:
+1. HR fixes the date order in greytHR (corrects either dateOfJoin or leavingDate so they're sequential), OR
+2. HR manually changes status to Left in Frappe HR (knowing that triggers Frappe HR's exit workflows)
+
+The `greytHR Sync Log` for that run will have an `error_summary` entry noting the conflict for HR's awareness.
+
+### Zero deletions, zero schema changes
+
+15-line mapper addition + 3 tests. Memory rule `never_delete_employee_records.md` continues to be honoured.

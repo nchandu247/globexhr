@@ -264,3 +264,68 @@ def test_full_real_response_produces_no_blocking_errors():
         assert required in result, f"missing required field: {required}"
     # No mapper errors that would block sync
     assert result["_mapping_errors"] == []
+
+
+# ── Date sanity: relieving_date < date_of_joining rejection ─────────────────
+# Real case: GDS0022 / employeeId 32 (Nalluri suresh) in greytHR has
+# dateOfJoin "2017-11-12" but leavingDate "2017-08-10" — impossible.
+# Frappe HR's Employee.validate rejects this, causing the whole save() to
+# fail and the record to stay as a ghost. Mapper must catch + sidestep.
+
+def test_relieving_before_joining_drops_relieving_keeps_active():
+    payload = {
+        "employeeId": 32,
+        "name": "Nalluri suresh",
+        "employeeNo": "GDS0022",
+        "dateOfJoin": "2017-11-12",
+        "leavingDate": "2017-08-10",     # 3 months BEFORE joining
+        "leftorg": True,
+        "gender": "M",
+    }
+    result = greythr_to_frappe(payload)
+
+    # date_of_joining preserved — it's valid on its own
+    assert result["date_of_joining"] == "2017-11-12"
+    # relieving_date dropped — would violate Frappe HR validation
+    assert "relieving_date" not in result
+    # status forced back to Active (NOT Left) so Frappe HR's relieving_date
+    # validation doesn't block the save
+    assert result["status"] == "Active"
+    # Error logged for HR to fix in greytHR source
+    assert any("relieving_date" in e and "before" in e
+               for e in result["_mapping_errors"])
+    # Other fields still mapped — partial enrichment is the goal
+    assert result["first_name"] == "Nalluri suresh"
+    assert result["gender"] == "Male"
+
+
+def test_relieving_equal_to_joining_is_allowed():
+    """Edge case: joined and left same day. Frappe HR allows it."""
+    payload = {
+        "employeeId": 99,
+        "name": "Short Stint",
+        "employeeNo": "GDS0099",
+        "dateOfJoin": "2024-05-01",
+        "leavingDate": "2024-05-01",
+        "leftorg": True,
+    }
+    result = greythr_to_frappe(payload)
+    assert result["status"] == "Left"
+    assert result["relieving_date"] == "2024-05-01"
+
+
+def test_relieving_after_joining_unaffected():
+    """Normal case: leaving date after joining date — status=Left preserved."""
+    payload = {
+        "employeeId": 100,
+        "name": "Normal Employee",
+        "employeeNo": "GDS0100",
+        "dateOfJoin": "2024-01-02",
+        "leavingDate": "2024-09-02",
+        "leftorg": True,
+    }
+    result = greythr_to_frappe(payload)
+    assert result["status"] == "Left"
+    assert result["relieving_date"] == "2024-09-02"
+    # No error logged for valid date order
+    assert not any("before" in e for e in result["_mapping_errors"])
