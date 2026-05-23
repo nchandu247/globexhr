@@ -187,3 +187,37 @@ def test_html_response_after_retry_raises_auth_error(settings):
 
     with pytest.raises(GreytHRAuthError):
         GreytHRClient().get("/employee/v2/employees")
+
+
+# ── 8. token cache uses frappe.db.set_value (concurrency-safe), not settings.save ──
+
+@rsps_lib.activate
+def test_token_cache_uses_db_set_value_not_settings_save(settings, patch_frappe):
+    """Regression: token cache must use frappe.db.set_value (direct SQL UPDATE)
+    instead of settings.save() to avoid optimistic-locking conflicts when
+    other processes write to greytHR Settings concurrently. The earlier
+    settings.save() approach raised TimestampMismatchError in production
+    when sync ran in parallel with diagnostic API calls (observed 2026-05-23)."""
+    _add_token()
+    _add_data()
+
+    client = GreytHRClient()
+    client.get("/employee/v2/employees")
+
+    # frappe.db.set_value MUST have been called for the token persist
+    patch_frappe.db.set_value.assert_called()
+    # And the call must target greytHR Settings with cached_token + expires
+    set_value_calls = patch_frappe.db.set_value.call_args_list
+    settings_writes = [
+        c for c in set_value_calls
+        if len(c.args) >= 2 and c.args[0] == "greytHR Settings"
+    ]
+    assert len(settings_writes) >= 1, (
+        "Token cache must call frappe.db.set_value('greytHR Settings', ...) "
+        "instead of settings.save() — see _persist_token docstring."
+    )
+    # The persisted dict must include both cached_token and token_expires_at
+    persisted_dict = settings_writes[0].args[2]
+    assert isinstance(persisted_dict, dict)
+    assert "cached_token" in persisted_dict
+    assert "token_expires_at" in persisted_dict

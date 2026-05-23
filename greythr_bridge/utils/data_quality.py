@@ -53,9 +53,15 @@ def list_ghost_employees() -> dict:
     _check_audit_role()
 
     # ── Ghosts: empty first_name ──────────────────────────────────────────────
+    # Use or_filters so SQL becomes (first_name IS NULL OR first_name = '').
+    # The earlier `["in", ["", None]]` form didn't handle NULL correctly because
+    # SQL's `IN ('', NULL)` is undefined for NULL.
     ghosts = frappe.get_all(
         "Employee",
-        filters={"first_name": ["in", ["", None]]},
+        or_filters=[
+            ["first_name", "is", "not set"],
+            ["first_name", "=", ""],
+        ],
         fields=[
             "name", "employee_number", "custom_greythr_employee_id",
             "company_email", "status", "custom_greythr_last_synced",
@@ -65,9 +71,15 @@ def list_ghost_employees() -> dict:
     )
 
     # ── Employees with first_name populated ───────────────────────────────────
+    # AND-combined filters so SQL becomes (first_name IS NOT NULL AND first_name != '').
+    # The earlier `["not in", ["", None]]` form returned 0 rows because SQL's
+    # `NOT IN ('', NULL)` is always undefined (never true) for any value.
     employees_with_data = frappe.get_all(
         "Employee",
-        filters={"first_name": ["not in", ["", None]]},
+        filters=[
+            ["first_name", "is", "set"],
+            ["first_name", "!=", ""],
+        ],
         fields=[
             "name", "first_name", "last_name", "employee_number",
             "custom_greythr_employee_id", "company_email", "status",

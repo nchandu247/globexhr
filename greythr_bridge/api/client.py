@@ -12,6 +12,31 @@ from ..utils.retry import retry
 from ..utils.rate_limiter import rate_limited
 
 
+def _persist_token(token: str | None, expires_at: str | None) -> None:
+    """
+    Persist OAuth token + expiry to greytHR Settings using direct SQL UPDATE
+    (bypasses optimistic locking).
+
+    Why: Settings is written concurrently by sync tasks, webhooks, and other
+    API calls. Using `settings.save()` raises TimestampMismatchError when any
+    other write happened since this request loaded Settings. `frappe.db.set_value`
+    does a direct UPDATE without version check — safe because cached_token /
+    token_expires_at are independent fields.
+
+    cached_token is a Password field type — set_value handles encryption
+    transparently in Frappe v15+.
+    """
+    frappe.db.set_value(
+        "greytHR Settings",
+        "greytHR Settings",
+        {
+            "cached_token": token,
+            "token_expires_at": expires_at,
+        },
+    )
+    frappe.db.commit()
+
+
 class GreytHRClient:
     """
     HTTP client for the greytHR REST API.
@@ -87,20 +112,32 @@ class GreytHRClient:
 
         token_data = resp.json()
         expires_in = token_data.get("expires_in", 3_888_000)
-        self.settings.cached_token = token_data["access_token"]
+        token = token_data["access_token"]
         # Store as string — Frappe v16 iterates over datetime objects during field
         # validation, causing TypeError. Always store datetimes as strings in Settings.
-        self.settings.token_expires_at = (
-            now + timedelta(seconds=expires_in)
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        self.settings.save(ignore_permissions=True)
-        return token_data["access_token"]
+        expires_str = (now + timedelta(seconds=expires_in)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        # Use frappe.db.set_value (not settings.save) to bypass optimistic
+        # locking. Settings is written concurrently by sync tasks (last_employee_sync),
+        # other API calls (token refresh), webhooks, and manual operations. Using
+        # save() raises TimestampMismatchError if any other write happened since
+        # this request loaded Settings. set_value does a direct SQL UPDATE without
+        # version check — safe because cached_token / token_expires_at are
+        # independent of other Settings fields. (Same pattern as pull_employees.py
+        # already uses for last_employee_sync — see comment there.)
+        _persist_token(token, expires_str)
+        # Update in-memory copy so subsequent calls in the SAME request see the
+        # fresh token without re-reading Settings from DB.
+        self.settings.cached_token = token
+        self.settings.token_expires_at = expires_str
+        return token
 
     def _clear_token_cache(self) -> None:
         """Invalidate cached token so the next call fetches a fresh one."""
+        _persist_token(None, None)
         self.settings.cached_token = None
         self.settings.token_expires_at = None
-        self.settings.save(ignore_permissions=True)
 
     # -------------------------------------------------------------- request
 

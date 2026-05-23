@@ -6,11 +6,38 @@ Depends on: greytHR Employee Mapping DocType (task 2.1),
             custom fields on Employee (task 2.2).
 """
 import frappe
-from datetime import datetime
+from datetime import date, datetime
 
 from ..api.employee import list_employees
 from ..mappers.employee_mapper import greythr_to_frappe
 from ..utils.logging import log_error
+
+
+def _values_differ(current, new) -> bool:
+    """
+    Compare current Frappe value vs mapper-produced new value, accounting
+    for type mismatches that would otherwise produce false positives.
+
+    Why: Frappe stores Date fields as Python `date` objects and Datetime
+    fields as `datetime` objects, but the mapper produces ISO strings
+    ("2024-01-02"). Naïve `!=` returns True even when semantically equal,
+    causing the sync to call save() on every run when nothing changed.
+
+    Coerce date/datetime objects to their ISO string forms before comparing.
+    """
+    if current is None and new is None:
+        return False
+    if current is None or new is None:
+        return True
+    if isinstance(current, datetime):
+        current = current.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(current, date):
+        current = current.strftime("%Y-%m-%d")
+    if isinstance(new, datetime):
+        new = new.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(new, date):
+        new = new.strftime("%Y-%m-%d")
+    return current != new
 
 
 # ── public entry points ────────────────────────────────────────────────────────
@@ -127,7 +154,8 @@ def _sync_one(greythr_emp: dict) -> str:
         for field, value in mapped.items():
             if field.startswith("_"):
                 continue
-            if frappe_employee.get(field) != value:
+            current = frappe_employee.get(field)
+            if _values_differ(current, value):
                 frappe_employee.set(field, value)
                 changed = True
 

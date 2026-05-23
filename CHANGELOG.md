@@ -613,3 +613,62 @@ Test suite: **159 passing** (was 143), 3 skipped.
 ### Zero deletions, zero renames
 
 This commit continues the pattern: no Employee or Mapping records deleted, no primary keys changed, no manual data manipulation. The 332 records get enriched in place by the sync once the mapper and fields are correct. Memory rule `never_delete_employee_records.md` honoured.
+
+---
+
+## [Unreleased] — Cleanup pass after mapper rewrite (2026-05-23)
+
+Mapper rewrite was verified working on live (332 records, 209 correctly flipped to Left, 122 of 123 Active enriched with names). This commit fixes three small issues found during verification:
+
+### Fix 1: Audit endpoint NOT-IN-NULL bug
+
+`list_ghost_employees()` was reporting `total_employees: 1` while the live site had 332. Root cause: the audit query used `filters={"first_name": ["not in", ["", None]]}` which SQL evaluates as `WHERE first_name NOT IN ('', NULL)` — always undefined (never true) because of how NOT IN handles NULL. Always returned zero rows.
+
+Fix: rewrite both audit queries to use explicit `or_filters` / `is set`/`is not set` operators that translate to proper SQL `IS NULL`/`IS NOT NULL` handling:
+- Ghosts: `or_filters=[["first_name", "is", "not set"], ["first_name", "=", ""]]`
+- With-data: `filters=[["first_name", "is", "set"], ["first_name", "!=", ""]]`
+
+Added regression test `test_audit_queries_use_or_filters_not_in_with_null` that asserts the query does NOT use the broken `not in` form.
+
+### Fix 2: client.py token-cache optimistic-locking race
+
+The OAuth token cache used `self.settings.save(ignore_permissions=True)` which triggered Frappe's optimistic locking. Any concurrent write to `greytHR Settings` (sync's `last_employee_sync` update, webhook handlers, another API call refreshing) caused `TimestampMismatchError` — observed in production on 2026-05-23 when running the diagnostic concurrent with a scheduled sync.
+
+`pull_employees.py` had already worked around this for its own Settings write by using `frappe.db.set_value` (direct SQL UPDATE, no version check). The client was never updated to match.
+
+Fix: new `_persist_token(token, expires_at)` helper in `api/client.py` that uses `frappe.db.set_value` to write `cached_token` + `token_expires_at` atomically. Both `_get_token` and `_clear_token_cache` now go through it. In-memory `self.settings` copy is also updated so the same request sees the fresh token without re-reading from DB.
+
+Added regression test `test_token_cache_uses_db_set_value_not_settings_save` that pins the new behaviour.
+
+### Fix 3: Date string vs Python date comparison
+
+After the mapper rewrite, every sync run was triggering save() on every record even when nothing semantically changed. Root cause: Frappe stores Date/Datetime fields as Python `date`/`datetime` objects but the mapper produces ISO strings ("2024-01-02"). Naïve `frappe_employee.get("date_of_birth") != "1994-03-15"` returns True for `date(1994, 3, 15)` because of the type mismatch.
+
+Cost: unnecessary `frappe_employee.save()` call per record per sync (every 15 min). Not data-incorrect, just wasteful.
+
+Fix: new `_values_differ(current, new)` helper in `tasks/pull_employees.py` that coerces both sides to comparable strings before comparing. The `_sync_one` update loop now uses `_values_differ` instead of `!=`.
+
+Added 6 unit tests covering: same date object == ISO string returns False, both None returns False, one None returns True, different strings differ, same strings don't differ, different dates differ.
+
+### Tests
+
+- 167 passing (was 159), 3 skipped
+- 8 new tests across `test_data_quality.py`, `test_pull_employees.py`, `test_client.py`
+
+### Operational note for the 1 remaining ghost (HR-EMP-00683)
+
+After deploy, please run:
+```
+/api/method/greythr_bridge.utils.sync_diagnostics.inspect_sync_for_employee?employee_name=HR-EMP-00683
+```
+
+This will tell us whether HR-EMP-00683 has a greytHR mapping (and if so, what greytHR returns for that ID). Three likely outcomes:
+1. **No mapping** — record was manually created in Frappe, never seen by sync. Either HR pulls it into greytHR or accepts it as a Frappe-only record.
+2. **Broken mapping** (greythr_employee_id is empty or wrong) — bulk-import placeholder, won't ever match a greytHR response. Mapping needs HR cleanup.
+3. **Valid mapping but greytHR returns empty data for that ID** — greytHR data quality issue at source.
+
+Either way, no code change needed — single-record diagnosis followed by either greytHR portal edit or accepting the lone ghost.
+
+### Zero destructive operations
+
+All three fixes are read-side or write-pattern changes — no data deleted, no schema changes, no record renames. Constraint from `memory/never_delete_employee_records.md` continues to be honoured.

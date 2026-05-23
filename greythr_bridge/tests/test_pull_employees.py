@@ -60,6 +60,48 @@ def test_existing_employee_updated_via_mapping(patch_frappe):
 
 # ── _sync_one: matched but nothing to change → "skipped" (counter-honesty fix) ──
 
+# ── _values_differ: type-aware comparison ─────────────────────────────────────
+
+def test_values_differ_date_object_equals_iso_string():
+    """Regression: Frappe returns Date fields as Python date objects, mapper
+    produces ISO strings. Naïve != returns True (different types), causing
+    sync to save() every run with no actual changes."""
+    from datetime import date, datetime
+    from greythr_bridge.tasks.pull_employees import _values_differ
+
+    # Same value, different types → must compare as equal
+    assert _values_differ(date(2024, 1, 2), "2024-01-02") is False
+    assert _values_differ(datetime(2026, 5, 23, 12, 30, 0),
+                          "2026-05-23 12:30:00") is False
+
+
+def test_values_differ_both_none_equal():
+    from greythr_bridge.tasks.pull_employees import _values_differ
+    assert _values_differ(None, None) is False
+
+
+def test_values_differ_one_none_differs():
+    from greythr_bridge.tasks.pull_employees import _values_differ
+    assert _values_differ(None, "value") is True
+    assert _values_differ("value", None) is True
+
+
+def test_values_differ_different_strings():
+    from greythr_bridge.tasks.pull_employees import _values_differ
+    assert _values_differ("Active", "Left") is True
+
+
+def test_values_differ_same_strings():
+    from greythr_bridge.tasks.pull_employees import _values_differ
+    assert _values_differ("Active", "Active") is False
+
+
+def test_values_differ_different_dates_differ():
+    from datetime import date
+    from greythr_bridge.tasks.pull_employees import _values_differ
+    assert _values_differ(date(2024, 1, 2), "2024-09-02") is True
+
+
 def test_existing_employee_no_changes_returns_skipped(patch_frappe):
     """When all mapped fields match the existing Frappe record, the function
     must return 'skipped' — NOT 'updated'. The old behaviour returned

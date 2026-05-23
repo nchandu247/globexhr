@@ -142,3 +142,41 @@ def test_list_ghost_employees_empty_database(patch_frappe):
     assert result["ghosts"] == []
     assert result["mapped_clean"] == []
     assert result["frappe_only"] == []
+
+
+def test_audit_queries_use_or_filters_not_in_with_null(patch_frappe):
+    """Regression test for the NOT-IN-NULL bug discovered 2026-05-23.
+
+    The earlier audit used `filters={"first_name": ["not in", ["", None]]}`
+    which translates to SQL `WHERE first_name NOT IN ('', NULL)` — always
+    undefined (never true) for any value, returning ZERO rows even when 300+
+    enriched records exist.
+
+    This test pins the fix: the ghosts query must use OR with is-not-set,
+    and the employees-with-data query must use AND with is-set.
+    """
+    _setup_audit_role(patch_frappe)
+    patch_frappe.get_all.side_effect = [[], [], []]
+
+    from greythr_bridge.utils.data_quality import list_ghost_employees
+    list_ghost_employees()
+
+    # Inspect the get_all calls to verify they use the safe filter forms
+    calls = patch_frappe.get_all.call_args_list
+    assert len(calls) >= 2, "Expected at least 2 get_all calls (ghosts + with_data)"
+
+    # First call = ghosts query — must use or_filters with "is not set" + ""
+    ghosts_call_repr = str(calls[0])
+    assert "or_filters" in ghosts_call_repr, (
+        "Ghosts query must use or_filters to combine 'is not set' OR '= empty'."
+    )
+    assert "not set" in ghosts_call_repr
+
+    # Second call = employees_with_data — must use AND with "is set" + "!= ''"
+    with_data_call_repr = str(calls[1])
+    # The AND filter form is a list of conditions (not or_filters)
+    # Critical: must NOT use ["not in", ["", None]] (the broken pattern)
+    assert '"not in"' not in with_data_call_repr, (
+        "employees_with_data must NOT use NOT IN with NULL — returns 0 in SQL."
+    )
+    assert "'not in'" not in with_data_call_repr
