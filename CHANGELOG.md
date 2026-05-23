@@ -729,3 +729,121 @@ The `greytHR Sync Log` for that run will have an `error_summary` entry noting th
 ### Zero deletions, zero schema changes
 
 15-line mapper addition + 3 tests. Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Employee ID alignment with greytHR (2026-05-23)
+
+### Goal
+
+HR and greytHR portal show employee IDs as `GDS0380`. Frappe shows them as `HR-EMP-01009`. No visual correlation between the two systems. Two-commit fix to bring Frappe's primary key into alignment with greytHR's `employee_number`.
+
+### Phase 1 — NEW records use greytHR `employee_number` as Frappe name (shipped: commit `2762016`)
+
+From this commit forward, any new Employee created (via sync OR manual UI) with `employee_number` populated will use that value as the Frappe primary key, instead of the default `HR-EMP-####` auto-generated naming.
+
+**Defense-in-depth: two code paths set `doc.name`:**
+
+1. `tasks/pull_employees.py::_sync_one` — explicitly sets `doc.name = mapped["employee_number"]` BEFORE `doc.insert()` for sync-created records
+2. `hooks_handlers.employee.set_name_from_greythr_id` — new `before_insert` hook on Employee (registered in `hooks.py`); covers manual UI creates + any other code path
+
+Both check `doc.name` is not already set (idempotent) and fall through to Frappe HR's default naming series (`HR-EMP-####`) when `employee_number` is empty. This preserves HR's ability to add new hires manually before a greytHR ID is assigned.
+
+**Existing 331 records still use `HR-EMP-####` after Phase 1.** Phase 2 (below) renames them in a separate triggered operation.
+
+### Phase 2 — One-shot rename of existing records (shipped, NOT yet triggered)
+
+New module `tasks/rename_employees_to_greythr_id.py` with two whitelisted endpoints:
+
+- **`plan_rename()`** — read-only categorisation. Returns counts + full lists by category: `to_rename`, `already_correct`, `no_employee_number`, `invalid_pattern`, `collisions`. Safe to call anytime.
+- **`run_rename(confirm="yes")`** — enqueues the background job. Requires explicit `confirm=yes` parameter. System Manager only.
+
+**Mechanics (key safeguards):**
+
+- **Per-record commit + rollback:** `frappe.rename_doc` is NOT internally transactional — it runs separate SQL UPDATEs for parent + every FK reference. We commit per-record on success and rollback per-record on failure. One bad record doesn't abort the batch.
+- **Auto-disable greytHR sync during rename:** prevents race conditions with the every-15-min `pull_employees` task. Script flips `greytHR Settings.enabled = 0` at start and restores original value at end via `try/finally`. Self-recovering even on crash.
+- **Skip-and-continue for bad data:** records with invalid `employee_number` (typo, lowercase, non-GDS format) are skipped, logged with reason, batch proceeds for valid records.
+- **Full audit trail:** every `(old, new)` pair (and any failures) persisted in `greytHR Sync Log.details` as JSON. Enables reverse migration in disaster recovery.
+- **Progress logging:** every 25 records, current counters are saved to the Sync Log — HR can monitor live in the browser.
+- **Background job (`enqueue("long", timeout=1500)`)** — synchronous HTTP would time out for 300+ renames on Frappe Cloud.
+
+### Pre-flight checklist (HR MUST do before triggering `run_rename`)
+
+1. **Take a Frappe Cloud DB backup.** Manual snapshot via bench dashboard. Primary recovery path if anything goes sideways.
+2. **Fix any remaining typo `employee_numbers` in greytHR portal.** Today's stragglers:
+   - HR-EMP-01012 (Gopi Gali) — greytHR shows `gds0115` → should be `GDS0115` (uppercase)
+   - HR-EMP-01010 (Yarabaka Mahitha) — greytHR shows `GSD0033` → should be `GDS0033` (typo)
+   - Wait one 15-min sync cycle after fixing so corrected values reach Frappe
+3. **Run during a payroll-quiet window** (no Payroll Entry generation in progress)
+4. **Call `plan_rename()` first** — review the plan output, confirm counts make sense, no unexpected collisions
+
+### How to use after deploy
+
+```bash
+# 1. Review the plan (read-only, safe anytime)
+GET /api/method/greythr_bridge.tasks.rename_employees_to_greythr_id.plan_rename
+
+# Expected output approx:
+# {
+#   "summary": {
+#     "total_employees": 331,
+#     "to_rename": 329,
+#     "already_correct": 0,
+#     "no_employee_number": 0,
+#     "invalid_pattern": 2,   # gds0115, GSD0033 — fix in greytHR first
+#     "collisions": 0
+#   },
+#   "to_rename": [{from: "HR-EMP-00001", to: "GDS0001"}, ...],
+#   ...
+# }
+
+# 2. After pre-flight checklist complete, trigger the actual rename
+POST /api/method/greythr_bridge.tasks.rename_employees_to_greythr_id.run_rename?confirm=yes
+
+# Returns: {"status": "enqueued", "check_progress_at": "/app/greythr-sync-log"}
+
+# 3. Monitor progress
+# Open /app/greythr-sync-log — newest entry with sync_type="Rename Employees to greytHR ID"
+# records_processed / records_renamed / records_failed update every 25 records
+
+# 4. After completion, verify
+GET /api/method/greythr_bridge.utils.data_quality.list_ghost_employees
+# Expected: all records have GDS#### names (employees_with_data list shows
+# names matching employee_number)
+```
+
+### Failure recovery
+
+| Scenario | Recovery |
+|---|---|
+| Single rename fails | Logged in `error_summary`, others succeed. Re-run plan_rename + run_rename — it'll skip already-renamed and retry failed. |
+| Multiple renames fail | Same as above — re-runnable, idempotent. |
+| `_do_rename` crashes mid-batch | Sync auto-re-enabled via `try/finally`. Successful renames persist (per-record commit). Failed/un-attempted records logged. Re-run as needed. |
+| Disaster (corruption beyond fix) | Frappe Cloud DB restore from pre-rename backup. |
+| Need to undo all renames | Parse `details` JSON from Sync Log; loop `frappe.rename_doc(new, old)` for each pair (one-off script). |
+
+### What does NOT change
+
+- Existing payroll history (Salary Slips, Leave records, Attendance) — `rename_doc` updates the FK references, the historical data itself stays intact
+- Historical PDFs already attached to records — they retain old IDs in their text content (immutable artifacts; new PDFs generated after rename use new IDs)
+- External bookmarks / emails pointing at `/app/employee/HR-EMP-####` URLs — break after rename (no auto-redirect in Frappe). Probably zero exist in this environment.
+- The 7 Phase B letters — they use `frappe.get_doc("Employee", name)` which works regardless of the name format
+
+### Tests
+
+- **187 passing** (was 170), 3 skipped
+- 5 new tests for Phase 1 (`test_pull_employees.py`): sync-created uses GDS####, fallback to series, the `before_insert` hook behaviour
+- 12 new tests for Phase 2 (`test_rename_employees.py`): role check, plan categorisation, collision detection, idempotency, per-record commit/rollback, sync auto-disable/re-enable, audit trail persistence
+- Test fixture hygiene fix in `conftest.py`: also reset `new_doc` and `get_doc` `side_effect` between tests
+
+### Memory rule refinement
+
+Updated `memory/never_delete_employee_records.md` with today's learnings from the HR-EMP-01011 cleanup and the rename design:
+
+- Hard rule clarified: no deletion CODE in sync/webhook/scheduled pipelines (manual UI deletion by HR is OK for confirmed orphans)
+- Added the full linked-records impact-check guidance (the 8 doctypes to check, including the `frappe_employee` field-name gotcha for greytHR Employee Mapping)
+- Documented that renames carry similar risk to deletions and follow the same safeguards (plan-first, confirm-required, per-record commit, sync auto-disable, audit trail, DB backup, System Manager only)
+
+### Zero destructive operations in this commit
+
+Phase 1 adds naming logic (zero data change). Phase 2 ships the rename tooling but is NOT auto-triggered — HR explicitly invokes after pre-flight. The rename itself is per-record-atomic with rollback. No deletions anywhere.
