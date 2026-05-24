@@ -847,3 +847,41 @@ Updated `memory/never_delete_employee_records.md` with today's learnings from th
 ### Zero destructive operations in this commit
 
 Phase 1 adds naming logic (zero data change). Phase 2 ships the rename tooling but is NOT auto-triggered — HR explicitly invokes after pre-flight. The rename itself is per-record-atomic with rollback. No deletions anywhere.
+
+---
+
+## [Unreleased] — Rename job Sync Log Select-value fixes (2026-05-24)
+
+### Two `_validate_selects` rejections caught the rename job before any rename ran
+
+First trigger of `run_rename?confirm=yes` enqueued `_do_rename` cleanly, but the job crashed inside `_start_rename_log` at `doc.insert()` on the very first DB write. Two stacked Select-validation errors, in sequence:
+
+1. **`sync_type = "Rename Employees to greytHR ID"`** — not in the field's Options on the live `greytHR Sync Log` DocType (originally created via Form Builder in Phase 1, only ever had 6 values: `Pull Employees`, `Pull Salary`, `Push Employee`, `Push Signed PDF`, `Push Salary Revision`, `Update Employee Status`). Fixed on live by HR via the DocType UI (added the new option to the Select Options).
+2. **`status = "In Progress"`** — the rename code was the only sync task using this value. `pull_employees` and `pull_salary_structures` both use `Started`. The DocType's `status` Select accepts only `Started`, `Success`, `Partial Success`, `Failed` — `In Progress` is not in the list. Fixed in code by aligning with the existing convention.
+
+Both failures fired during `doc.insert()`'s validation phase, so **no Sync Log row was ever persisted, no Employee record was touched, sync was never disabled** — clean rollback on both attempts. Recoverable by simply re-triggering after the fix.
+
+### Fixes shipped
+
+- ✅ **`greythr_bridge/tasks/rename_employees_to_greythr_id.py:312`** — `doc.status = "Started"` (was `"In Progress"`) in `_start_rename_log`. Plus a 3-line comment documenting the Select enum so the next reader doesn't reintroduce the bug.
+- ✅ **`greythr_bridge/tests/test_rename_employees.py`** — new regression test `test_start_rename_log_uses_valid_status_enum` that pins `status == "Started"` and asserts the value is in the valid set `{Started, Success, Partial Success, Failed}`. Would have caught this offline if it had existed.
+- ✅ **Live DocType fix (out of band, UI-only):** appended `Rename Employees to greytHR ID` to the `sync_type` field's Options on `greytHR Sync Log`. Not in source — the entire DocType is missing from `greythr_bridge/doctype/` (was created via Form Builder, never exported via `bench export-fixtures`). The `hooks.py` fixtures filter for `module = greytHR` would auto-include it if exported.
+
+### Tests
+
+- **188 passing** (was 187), 3 skipped
+- 1 new test in `test_rename_employees.py` covering both the strict Select enum check and the convention-match assertion
+
+### Hygiene gap to address separately
+
+The `greytHR Sync Log`, `greytHR Settings`, and `greytHR Employee Mapping` DocTypes all live only on the live site — they're not in our source repo. Any field-level edit made via Form Builder (like today's `sync_type` Options append) is currently un-replayable from git. A separate task should:
+
+1. SSH into the bench, run `bench --site gdshr.m.frappe.cloud export-fixtures --app greythr_bridge`
+2. Commit the resulting `greythr_bridge/doctype/greythr_sync_log/greythr_sync_log.json` (and siblings) to git
+3. Future field changes happen via JSON edit + migrate, not via Form Builder
+
+Not blocking the rename; safe to defer.
+
+### Zero data touched
+
+This commit is pure tooling correctness. The two failed attempts left zero side effects (insert validation rolled back). After deploy, re-triggering `run_rename?confirm=yes` should succeed end-to-end.

@@ -305,11 +305,14 @@ def _do_rename() -> None:
 # ── Sync Log helpers ──────────────────────────────────────────────────────────
 
 def _start_rename_log(started_at: datetime):
+    # `status` Select on greytHR Sync Log accepts only:
+    # Started / Success / Partial Success / Failed.
+    # Stay consistent with pull_employees + pull_salary_structures.
     doc = frappe.new_doc("greytHR Sync Log")
     doc.sync_type = "Rename Employees to greytHR ID"
     doc.triggered_by = "Manual"
     doc.started_at = started_at.strftime("%Y-%m-%d %H:%M:%S")
-    doc.status = "In Progress"
+    doc.status = "Started"
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
     return doc

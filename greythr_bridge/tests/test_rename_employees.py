@@ -273,3 +273,31 @@ def test_do_rename_persists_audit_trail_in_sync_log_details(patch_frappe):
         and entry["status"] == "OK"
         for entry in details_dict["audit"]
     )
+
+
+# ── Sync Log Select-field convention ──────────────────────────────────────────
+
+def test_start_rename_log_uses_valid_status_enum(patch_frappe):
+    """The initial `status` written to greytHR Sync Log must be 'Started'
+    (the only valid 'job is running' value in the Select options:
+    Started / Success / Partial Success / Failed).
+
+    Regression: an earlier version used 'In Progress', which Frappe's
+    _validate_selects rejected, crashing _do_rename before any rename ran.
+    """
+    sync_log = MagicMock()
+    patch_frappe.new_doc.return_value = sync_log
+
+    from datetime import datetime
+    from greythr_bridge.tasks.rename_employees_to_greythr_id import _start_rename_log
+    _start_rename_log(datetime(2026, 5, 24, 15, 0, 0))
+
+    valid_running_states = {"Started", "Success", "Partial Success", "Failed"}
+    assert sync_log.status in valid_running_states, (
+        f"status={sync_log.status!r} not in Select options {valid_running_states}"
+    )
+    # Specifically pin to "Started" — convention shared with pull_employees
+    # and pull_salary_structures.
+    assert sync_log.status == "Started"
+    assert sync_log.sync_type == "Rename Employees to greytHR ID"
+    assert sync_log.triggered_by == "Manual"
