@@ -1024,3 +1024,54 @@ Employee 389 will be created in Frappe with `status: "Active"` even though greyt
 ### Zero data deletion, zero invasive change
 
 15-line mapper diff + 60-line diagnostic addition + tests. Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Employee picker UX filter (Phase 4 — 2026-05-24)
+
+### Hide invalid-pattern records from autocompletes + list views
+
+The 2 records the GDS#### rename couldn't process (HR-EMP-01010 `GSD0033` Yarabaka Mahitha, HR-EMP-01013 `Gds0943274` siuad) still show up in every Employee Link picker across the system — Salary Structure Assignment, Job Offer Reporting To, Payroll Entry, Salary Slip, Attendance, etc. HR seeing them in autocompletes makes it easy to accidentally pick a record with malformed greytHR ID.
+
+### Fix
+
+A `permission_query_conditions` hook on Employee that appends a SQL filter to every list / picker query:
+
+> Allow records where `employee_number` is NULL/empty (manual Frappe-only employees) OR matches `^GDS\d{3,5}$` (case-insensitive, same regex as the rename script). Filter out everything else.
+
+This is a **UX filter, not a security boundary**. Direct URL access (`/app/employee/HR-EMP-01010`) still works — HR can fix these records via greytHR portal corrections then re-trigger the rename or sync to clean them up.
+
+### Why now
+
+Now that the rename is shipped and the 2 invalid-pattern records are the *only* records with non-canonical IDs, filtering them out at the picker layer is risk-free: any future record HR creates either has a valid greytHR ID (matches `^GDS\d{3,5}$`) or has no greytHR ID at all (manual create, NULL passes the filter).
+
+### Files
+
+- ✅ **`greythr_bridge/utils/permissions.py`** (new) — `employee_query_conditions(user)` returns the SQL fragment. MariaDB's `REGEXP` is case-insensitive on Frappe's default `utf8mb4_unicode_ci` collation, so a single regex covers both `GDS0001` and `gds0115`.
+- ✅ **`greythr_bridge/hooks.py`** — wires `permission_query_conditions = {"Employee": ...}` with a 3-line comment explaining the UX-vs-security distinction.
+- ✅ **`greythr_bridge/tests/test_permissions.py`** (new) — 6 tests:
+  - SQL shape check (balanced parens, OR-bound clause)
+  - NULL/empty allowance (manual employees stay visible)
+  - GDS\d{3,5} pattern present + correctly anchored
+  - Spot-check against the 2 known invalid records and a handful of known-good IDs
+  - User argument accepted but doesn't change filter (UX-uniform)
+  - hooks.py routes Employee queries to this function (catches the silent wiring mistake)
+
+### Tests
+
+- **208 passing** (was 202), 3 skipped
+
+### Not in this commit (Phase 4 scope check)
+
+Original Phase 4 spec also called for:
+- Adding `employee_number` as an Employee-list column → **dropped**: after the rename, `name == employee_number` for all 330 GDS-aligned records, so the column would duplicate the name. The primary key (name = GDS####) is already the row click target.
+- Visual indicator (badge) for records with a greytHR mapping → **deferred**: nice-to-have, but every active employee now has a mapping after the rename, so the indicator wouldn't visually distinguish anything. Worth revisiting only when manual Frappe-only employees become common.
+
+### Note for HR
+
+After deploy, HR-EMP-01010 and HR-EMP-01013 will silently disappear from Employee pickers. To make them re-appear:
+1. Fix the `employee_number` value in greytHR portal (`GSD0033` → `GDS0033`, `Gds0943274` → a valid `GDS####`)
+2. Wait for next sync OR click "Sync from greytHR Now"
+3. Run `plan_rename` — they'll move from `invalid_pattern` to `to_rename`
+4. Run `run_rename?confirm=yes` to align the Frappe primary key
+5. They re-appear in pickers automatically (filter allows them now)

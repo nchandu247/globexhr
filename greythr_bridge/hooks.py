@@ -46,6 +46,15 @@ scheduler_events = {
     }
 }
 
+# UX filter — hide Employees with malformed employee_number values from
+# autocompletes and list views (NOT a security boundary; direct URL access
+# still works). Covers the 2 invalid_pattern records that the GDS#### rename
+# skips. See greythr_bridge/utils/permissions.py for the rationale.
+permission_query_conditions = {
+    "Employee": "greythr_bridge.utils.permissions.employee_query_conditions",
+}
+
+
 # Document event handlers
 doc_events = {
     "Job Offer": {
