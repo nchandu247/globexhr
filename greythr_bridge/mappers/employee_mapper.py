@@ -129,22 +129,35 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
     if "fitToBeRehired" in greythr_employee:
         result["custom_fit_to_rehire"] = 1 if greythr_employee["fitToBeRehired"] else 0
 
-    # ── Sanity check: relieving_date must be on/after date_of_joining ─────────
-    # greytHR has been observed returning impossible date combinations (e.g.,
-    # GDS0022 / employeeId 32: dateOfJoin "2017-11-12", leavingDate "2017-08-10"
-    # — left 3 months BEFORE joining). Frappe HR's Employee.validate hook
-    # rejects status="Left" when relieving_date < date_of_joining, causing the
-    # whole save() to throw. To keep the rest of the data syncable, drop the
-    # impossible relieving_date, force status back to Active, and log the
-    # conflict for HR to fix at the greytHR source.
-    if (result.get("relieving_date") and result.get("date_of_joining")
-            and result["relieving_date"] < result["date_of_joining"]):
-        errors.append(
-            f"relieving_date ({result['relieving_date']}) is before "
-            f"date_of_joining ({result['date_of_joining']}) — keeping status "
-            f"Active; HR must fix the dates in greytHR for "
-            f"employeeId={greythr_employee.get('employeeId')}"
-        )
+    # ── Sanity check: a "Left" record needs BOTH a date_of_joining AND a
+    # relieving_date >= date_of_joining. Frappe HR's Employee.validate hook
+    # rejects any save that violates this, which previously caused the whole
+    # record to fail on every sync. To keep the rest of the data syncable,
+    # downgrade status to Active and drop the bad relieving_date.
+    #
+    # Two observed greytHR data-quality classes drive this check:
+    #   1. Inverted dates — GDS0022 / employeeId 32: dateOfJoin "2017-11-12",
+    #      leavingDate "2017-08-10" (left 3 months BEFORE joining).
+    #   2. Missing dateOfJoin — employeeId 389: leavingDate set but dateOfJoin
+    #      absent or unparseable, so the mapper produces relieving_date with
+    #      no date_of_joining for Frappe to compare against. Frappe HR still
+    #      rejects the save (Left requires both). Same family of bug.
+    rd = result.get("relieving_date")
+    doj = result.get("date_of_joining")
+    if rd and (not doj or rd < doj):
+        emp_id = greythr_employee.get("employeeId")
+        if not doj:
+            errors.append(
+                f"relieving_date ({rd}) set but date_of_joining missing/"
+                f"unparseable — keeping status Active; HR must populate "
+                f"dateOfJoin in greytHR for employeeId={emp_id}"
+            )
+        else:
+            errors.append(
+                f"relieving_date ({rd}) is before date_of_joining ({doj}) — "
+                f"keeping status Active; HR must fix the dates in greytHR "
+                f"for employeeId={emp_id}"
+            )
         result.pop("relieving_date", None)
         result["status"] = "Active"
 

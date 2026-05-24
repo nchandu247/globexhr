@@ -193,6 +193,64 @@ def inspect_sync_for_employee(employee_name: str, save_dry_run=True) -> dict:
 
 
 @frappe.whitelist()
+def inspect_greythr_employee(greythr_id: str) -> dict:
+    """
+    Show what greytHR returns for a given employeeId and what the mapper
+    extracts. NO Frappe Employee lookup, NO save — pure read.
+
+    Use when investigating a record that's failing the sync BEFORE it can
+    be created in Frappe (so no Mapping exists yet). Companion to
+    inspect_sync_for_employee, which needs an existing Frappe Employee.
+
+    Args:
+        greythr_id: the greytHR employeeId, as a string (e.g., "389")
+
+    Output:
+        - greythr_id: echo of the input
+        - greythr_api_response: raw bytes from /employees/{id}
+        - extracted_employee_payload: the employee dict pulled out of the response
+        - mapper_output: what the mapper would produce for this record
+                         (relieving_date intentionally dropped if invalid)
+        - mapper_errors: sanity-check messages + any field-mapping errors
+
+    Call:
+        /api/method/greythr_bridge.utils.sync_diagnostics.inspect_greythr_employee
+            ?greythr_id=389
+    """
+    _check_admin_role()
+
+    if not greythr_id:
+        return {"error": "greythr_id is required"}
+
+    try:
+        raw_response = get_employee(greythr_id)
+    except Exception as exc:
+        return {
+            "greythr_id": greythr_id,
+            "greythr_api_error": f"{type(exc).__name__}: {str(exc)[:300]}",
+        }
+
+    extracted = (
+        raw_response.get("data") if isinstance(raw_response, dict) else raw_response
+    )
+    if isinstance(extracted, list) and extracted:
+        extracted = extracted[0]
+    elif not extracted:
+        extracted = raw_response
+
+    mapped = greythr_to_frappe(extracted or {})
+    mapper_errors = mapped.pop("_mapping_errors", [])
+
+    return {
+        "greythr_id": greythr_id,
+        "greythr_api_response": raw_response,
+        "extracted_employee_payload": extracted,
+        "mapper_output": mapped,
+        "mapper_errors": mapper_errors,
+    }
+
+
+@frappe.whitelist()
 def list_recent_sync_errors(limit: int = 20) -> dict:
     """
     Recent Error Log entries related to greytHR sync/employee operations.

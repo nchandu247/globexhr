@@ -951,3 +951,76 @@ Two alternatives considered:
 ### Why not delete `_pull` or the scheduled entry path
 
 `pull_employees.run` is still the scheduled entry point — only the cadence changed. Both the manual `run_now` (enqueues + returns) and the scheduled `run` (runs inline) share the same `_pull` core function. One code path, two trigger frequencies.
+
+---
+
+## [Unreleased] — Mapper sanity check: missing date_of_joining (2026-05-24)
+
+### employeeId 389 has been failing every 15 min (now daily)
+
+The error log entry surfaced during today's rename investigation:
+
+```
+pull_employees: employeeId=389 error=
+  Relieving Date must be after Date of Joining
+```
+
+Same Frappe HR validation as GDS0022 (Nalluri suresh), but the mapper's sanity check from 2026-05-23 didn't catch this record. Investigation showed there's **no greytHR Employee Mapping for ID 389** — the record fails in the `_sync_one` create path on every attempt, so no mapping ever gets persisted. Couldn't use the existing `inspect_sync_for_employee` to debug it (that diagnostic requires an existing Frappe Employee with a mapping).
+
+### Root cause — second class of "impossible date" data
+
+The existing sanity check fires only when BOTH `relieving_date` AND `date_of_joining` are populated in the mapper output. If greytHR returns `leavingDate` but `dateOfJoin` is missing or unparseable, the mapper skips the sanity check, produces a record with `status: "Left"` + `relieving_date` + no `date_of_joining`. Frappe HR's Employee.validate still rejects the save (Left requires both dates), and the record fails on every sync.
+
+Two observed classes now share one defensive code path:
+
+1. **Inverted dates** — `relieving_date < date_of_joining` (GDS0022)
+2. **Missing joining date** — `relieving_date` set, `date_of_joining` absent (emp 389)
+
+Both downgraded to `status: "Active"` + `relieving_date` dropped, so the rest of the record's fields (name, gender, contact) can be enriched. HR is notified via the `_mapping_errors` list so they can fix the data at the greytHR source.
+
+### Changes shipped
+
+- ✅ **`greythr_bridge/mappers/employee_mapper.py`** — sanity check extended from `if rd and doj and rd < doj` to `if rd and (not doj or rd < doj)`. Error message distinguishes the two classes ("set but date_of_joining missing/unparseable" vs "before date_of_joining"). Comment block updated with both cases for the next reader.
+- ✅ **`greythr_bridge/utils/sync_diagnostics.py`** — new endpoint `inspect_greythr_employee(greythr_id)` that calls greytHR directly + runs the mapper, with NO Frappe Employee lookup. Companion to the existing `inspect_sync_for_employee` for records that fail before they can be created (so no mapping exists yet). System Manager only.
+- ✅ **`greythr_bridge/tests/test_mappers.py`** — two new tests:
+  - `test_relieving_set_but_no_date_of_joining_drops_relieving` — the emp-389 reproduction (leavingDate set, dateOfJoin omitted entirely)
+  - `test_relieving_with_unparseable_joining_date_drops_relieving` — companion case (dateOfJoin present but garbage string)
+- ✅ **`greythr_bridge/tests/test_sync_diagnostics.py`** — five new tests for the diagnostic helper:
+  - Role check (System Manager only)
+  - Empty `greythr_id` returns clear error
+  - Happy path returns API response + mapper output
+  - Bad-data path shows sanity-check downgrade + error message visible
+  - API error is structured, not bubbled
+
+### Tests
+
+- **202 passing** (was 195), 3 skipped
+- 7 new tests across two files
+
+### How to verify after deploy
+
+Once Frappe Cloud picks up this commit:
+
+```
+/api/method/greythr_bridge.utils.sync_diagnostics.inspect_greythr_employee?greythr_id=389
+```
+
+Expected response:
+- `greythr_api_response` shows the raw greytHR payload for employee 389
+- `mapper_output.status` is `Active`, `relieving_date` is absent
+- `mapper_errors` contains an entry like *"relieving_date (X) set but date_of_joining missing/unparseable — keeping status Active; HR must populate dateOfJoin in greytHR for employeeId=389"*
+
+Then trigger a sync via the new "Sync from greytHR Now" workspace button — the next Sync Log entry should show `records_failed: 0` (assuming no other broken records), and employee 389 should appear as a fresh greytHR Employee Mapping row.
+
+### Operational note for HR
+
+Employee 389 will be created in Frappe with `status: "Active"` even though greytHR has them marked as left, because greytHR's record is incomplete (missing dateOfJoin). To resolve:
+
+1. Open employee 389 in the greytHR portal
+2. Populate the **Date of Joining** field
+3. Wait for the next scheduled sync (daily 6 AM IST) OR click "Sync from greytHR Now"
+4. The mapper sanity check will detect that the dates are now consistent and set `status: "Left"` correctly
+
+### Zero data deletion, zero invasive change
+
+15-line mapper diff + 60-line diagnostic addition + tests. Memory rule `never_delete_employee_records.md` continues to be honoured.

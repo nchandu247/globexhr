@@ -327,5 +327,65 @@ def test_relieving_after_joining_unaffected():
     result = greythr_to_frappe(payload)
     assert result["status"] == "Left"
     assert result["relieving_date"] == "2024-09-02"
+
+
+# Real case: employeeId 389 in greytHR returned leavingDate but NO dateOfJoin
+# (or unparseable). Frappe HR rejects status=Left when date_of_joining is
+# missing too — same family as the inverted-dates bug above (validate hook
+# refuses to compare relieving_date against a missing date_of_joining).
+# Sync error 2026-05-24: pull_employees: employeeId=389 error=Relieving
+# Date must be after Date of Joining.
+
+def test_relieving_set_but_no_date_of_joining_drops_relieving():
+    """When greytHR returns leavingDate but no dateOfJoin, dropping
+    relieving_date and forcing Active is the only way the record can sync."""
+    payload = {
+        "employeeId": 389,
+        "name": "Missing Joining Date",
+        "employeeNo": "GDS0389",
+        # dateOfJoin missing — common greytHR data-quality issue
+        "leavingDate": "2024-06-15",
+        "leftorg": True,
+        "gender": "F",
+    }
+    result = greythr_to_frappe(payload)
+
+    # relieving_date dropped — would violate Frappe HR validation (Left
+    # needs both date_of_joining AND relieving_date set)
+    assert "relieving_date" not in result
+    # status forced back to Active so the record can be saved at all
+    assert result["status"] == "Active"
+    # date_of_joining stays absent — mapper can't make data up
+    assert "date_of_joining" not in result
+    # Other fields still mapped
+    assert result["first_name"] == "Missing Joining Date"
+    assert result["gender"] == "Female"
+    assert result["custom_greythr_employee_id"] == "389"
+    # Error logged with the actionable message and the greytHR ID
+    assert any("missing" in e and "389" in str(e)
+               for e in result["_mapping_errors"])
+
+
+def test_relieving_with_unparseable_joining_date_drops_relieving():
+    """If dateOfJoin is present but unparseable, _parse_date logs the error
+    and returns None — so date_of_joining never enters the mapped dict.
+    Sanity check should treat this identically to missing dateOfJoin."""
+    payload = {
+        "employeeId": 390,
+        "name": "Garbage Joining Date",
+        "employeeNo": "GDS0390",
+        "dateOfJoin": "garbage-string",
+        "leavingDate": "2024-06-15",
+        "leftorg": True,
+    }
+    result = greythr_to_frappe(payload)
+
+    assert "relieving_date" not in result
+    assert "date_of_joining" not in result
+    assert result["status"] == "Active"
+    # Both the parse error AND the sanity-check error should be present
+    errors_joined = " ".join(result["_mapping_errors"])
+    assert "dateOfJoin" in errors_joined
+    assert "missing" in errors_joined
     # No error logged for valid date order
     assert not any("before" in e for e in result["_mapping_errors"])

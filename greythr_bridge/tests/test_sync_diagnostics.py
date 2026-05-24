@@ -252,3 +252,102 @@ def test_list_recent_sync_errors_requires_system_manager(patch_frappe):
         assert False, "Should have raised"
     except PermissionError:
         pass
+
+
+# ── inspect_greythr_employee — for records without mappings ──────────────────
+
+def test_inspect_greythr_employee_requires_system_manager(patch_frappe):
+    patch_frappe.get_roles.return_value = ["HR Manager"]
+    patch_frappe.throw.side_effect = PermissionError("denied")
+
+    from greythr_bridge.utils.sync_diagnostics import inspect_greythr_employee
+    try:
+        inspect_greythr_employee("389")
+        assert False, "Should have raised"
+    except PermissionError:
+        pass
+
+
+def test_inspect_greythr_employee_requires_id(patch_frappe):
+    """Empty greythr_id returns a clear error instead of calling greytHR."""
+    _setup_admin_role(patch_frappe)
+
+    from greythr_bridge.utils.sync_diagnostics import inspect_greythr_employee
+    result = inspect_greythr_employee("")
+    assert "error" in result
+    assert "required" in result["error"]
+
+
+def test_inspect_greythr_employee_returns_api_response_and_mapper_output(patch_frappe):
+    """Happy path: greytHR returns a record, mapper extracts it, both visible
+    in the response for debugging."""
+    _setup_admin_role(patch_frappe)
+
+    fake_response = {
+        "data": [{
+            "employeeId": 389,
+            "name": "Test Person",
+            "employeeNo": "GDS0389",
+            "dateOfJoin": "2024-01-15",
+            "leavingDate": "2024-08-15",
+            "leftorg": True,
+            "gender": "M",
+        }]
+    }
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=fake_response):
+        result = sync_diagnostics.inspect_greythr_employee("389")
+
+    assert result["greythr_id"] == "389"
+    assert result["greythr_api_response"] == fake_response
+    assert result["extracted_employee_payload"]["employeeId"] == 389
+    assert result["mapper_output"]["first_name"] == "Test Person"
+    assert result["mapper_output"]["custom_greythr_employee_id"] == "389"
+    # Valid record — no sanity-check error
+    assert result["mapper_output"]["status"] == "Left"
+    assert result["mapper_output"]["relieving_date"] == "2024-08-15"
+
+
+def test_inspect_greythr_employee_surfaces_sanity_check_for_bad_data(patch_frappe):
+    """When greytHR returns a record with missing dateOfJoin + leavingDate,
+    the response should show the mapper-output with relieving_date dropped
+    and the sanity-check error message visible — the exact diagnostic we
+    need for employeeId=389."""
+    _setup_admin_role(patch_frappe)
+
+    bad_payload = {
+        "employeeId": 389,
+        "name": "Missing Joining Date",
+        "employeeNo": "GDS0389",
+        # dateOfJoin missing — the hypothesis we're testing
+        "leavingDate": "2024-06-15",
+        "leftorg": True,
+    }
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=bad_payload):
+        result = sync_diagnostics.inspect_greythr_employee("389")
+
+    # Mapper applied the sanity check
+    assert "relieving_date" not in result["mapper_output"]
+    assert result["mapper_output"]["status"] == "Active"
+    # And surfaced the reason so HR knows what to fix in greytHR
+    assert any("missing" in e and "389" in str(e) for e in result["mapper_errors"])
+
+
+def test_inspect_greythr_employee_handles_api_error(patch_frappe):
+    """greytHR API errors (network, 404, auth) return a structured error
+    instead of bubbling up — caller can read the JSON instead of seeing a
+    500 in the browser."""
+    _setup_admin_role(patch_frappe)
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee",
+                      side_effect=RuntimeError("greytHR returned 404")):
+        result = sync_diagnostics.inspect_greythr_employee("999999")
+
+    assert result["greythr_id"] == "999999"
+    assert "greythr_api_error" in result
+    assert "RuntimeError" in result["greythr_api_error"]
+    assert "404" in result["greythr_api_error"]
