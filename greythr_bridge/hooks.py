@@ -35,10 +35,14 @@ fixtures = [
 # Scheduled jobs
 scheduler_events = {
     "cron": {
-        "*/15 * * * *": ["greythr_bridge.tasks.pull_employees.run"],      # Phase 2
-        "0 20 * * *":   ["greythr_bridge.tasks.pull_salary_structures.run"],  # Phase 3
-        "0 21 * * *":   ["greythr_bridge.tasks.stalled_signings.run"],         # Phase 5
-        # "0 22 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],          # Phase 5
+        # Daily at 6 AM IST (00:30 UTC). Was every 15 min — reduced 96× because
+        # greytHR data rarely changes between morning syncs. HR can force a
+        # fresh sync any time via the "Sync from greytHR Now" workspace card
+        # (calls greythr_bridge.tasks.pull_employees.run_now).
+        "0 6 * * *":  ["greythr_bridge.tasks.pull_employees.run"],            # Phase 2
+        "0 20 * * *": ["greythr_bridge.tasks.pull_salary_structures.run"],    # Phase 3
+        "0 21 * * *": ["greythr_bridge.tasks.stalled_signings.run"],          # Phase 5
+        # "0 22 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],         # Phase 5
     }
 }
 

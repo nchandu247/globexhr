@@ -1,6 +1,15 @@
 [
  {
   "doctype": "Client Script",
+  "name": "greytHR Sync Log — Sync Now Button",
+  "dt": "greytHR Sync Log",
+  "view": "List",
+  "enabled": 1,
+  "module": "greytHR",
+  "script": "frappe.listview_settings['greytHR Sync Log'] = frappe.listview_settings['greytHR Sync Log'] || {};\nconst _greythr_trigger_sync = (listview) => {\n    frappe.confirm(\n        'Trigger a fresh pull of all employees from greytHR now?<br><br>This usually takes ~30 seconds. A new Sync Log entry will appear when it starts.',\n        () => {\n            frappe.call({\n                method: 'greythr_bridge.tasks.pull_employees.run_now',\n                callback: (r) => {\n                    if (!r.exc) {\n                        frappe.show_alert({\n                            message: 'Sync started \\u2014 refresh in ~30s to see the new Sync Log entry.',\n                            indicator: 'green'\n                        }, 10);\n                        setTimeout(() => listview && listview.refresh(), 30000);\n                    }\n                }\n            });\n        }\n    );\n};\nfrappe.listview_settings['greytHR Sync Log'].onload = function(listview) {\n    const roles = frappe.user_roles || [];\n    if (!roles.includes('HR Manager') && !roles.includes('System Manager')) return;\n    listview.page.add_inner_button('Sync from greytHR Now', () => _greythr_trigger_sync(listview));\n    const params = new URLSearchParams(window.location.search);\n    if (params.get('manual_sync') === '1') {\n        history.replaceState(null, '', window.location.pathname);\n        setTimeout(() => _greythr_trigger_sync(listview), 300);\n    }\n};"
+ },
+ {
+  "doctype": "Client Script",
   "name": "Employee — Promotion Letter Button",
   "dt": "Employee",
   "view": "Form",

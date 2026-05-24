@@ -885,3 +885,69 @@ Not blocking the rename; safe to defer.
 ### Zero data touched
 
 This commit is pure tooling correctness. The two failed attempts left zero side effects (insert validation rolled back). After deploy, re-triggering `run_rename?confirm=yes` should succeed end-to-end.
+
+---
+
+## [Unreleased] — Sync cadence: daily + manual button (2026-05-24)
+
+### From "every 15 min" to "daily + on-demand"
+
+The scheduled `pull_employees` had been running every 15 minutes since Phase 2 (96 calls/day) — chosen originally for near-real-time freshness, but in practice greytHR data barely changes between scheduled syncs. The high cadence:
+
+- Masked the "sync claims success while doing nothing" bug for weeks (lots of "successful" runs that did no work)
+- Spawned the `employee 389` validation error every 15 minutes
+- Created the race condition that made today's GDS#### rename require sync auto-disable as a safeguard
+
+### Decision: Option C — Daily + Manual button
+
+- **Scheduled:** once daily at 6 AM IST (was `*/15 * * * *`, now `0 6 * * *`). Catches normal turnover before HR starts work.
+- **Manual:** new "Sync from greytHR Now" workspace shortcut + Client Script button on the Sync Log list view. HR triggers a fresh pull on demand (before letter generation, after a greytHR portal edit, after marking someone Left).
+
+Two alternatives considered:
+- **Daily only:** rejected — letter generation depends on current Employee data, HR needs a way to force a fresh sync without waiting until next morning.
+- **Manual only:** rejected — status-change cascading (User account auto-disable on Left) would only fire when HR remembers to sync, creating a security gap for departures.
+
+### Trade-offs HR accepts
+
+| Aspect | Old (15-min) | New (daily + manual) |
+|---|---|---|
+| API calls/day | 96 | 1 + manual triggers |
+| Max staleness | 15 min | 24h (with manual override available) |
+| Race conditions during ops | High | None during baseline; manual sync is HR's choice |
+| Letter generation freshness | Auto-fresh | One-click "Sync Now" before triggering letters |
+| Status cascading (Left → User disable) | ≤15 min | ≤24h, or HR clicks "Sync Now" after marking exit in greytHR |
+
+### Changes shipped
+
+- ✅ **`greythr_bridge/hooks.py`** — cron changed from `*/15 * * * *` to `0 6 * * *` for `pull_employees.run`. Added a 4-line comment explaining the manual button as the high-frequency replacement.
+- ✅ **`greythr_bridge/greythr/workspace/greythr/greythr.json`** — new shortcut "Sync from greytHR Now" added under Operations (Blue, prominent). URL opens the Sync Log list view with `?manual_sync=1` query param. Workspace shortcut count: 15 → 16. Content widget array updated to include the new shortcut tile.
+- ✅ **`greythr_bridge/fixtures/client_script.json`** — new Client Script "greytHR Sync Log — Sync Now Button":
+  - `view: List` — attaches to the Sync Log list view
+  - Adds an inner button "Sync from greytHR Now" at the top of the list
+  - Gated by HR Manager / System Manager role check
+  - Shows `frappe.confirm` dialog before triggering (prevents accidental clicks)
+  - Calls existing `greythr_bridge.tasks.pull_employees.run_now` (no new Python endpoint needed)
+  - Auto-opens the confirm dialog when arriving via `?manual_sync=1` (from the workspace shortcut), then strips the query param via `history.replaceState` so refresh doesn't re-trigger
+  - Auto-refreshes the list view after 30s so HR sees the new Sync Log entry without clicking refresh
+- ✅ **`greythr_bridge/tests/test_workspace_fixture.py`** — `test_exactly_15_shortcuts` renamed to `test_exactly_16_shortcuts` (16 now expected); new `test_manual_sync_shortcut_present` pins the shortcut's `link_to`, `type`, and `?manual_sync=1` URL contract.
+- ✅ **`greythr_bridge/tests/test_hooks_and_client_scripts.py`** (new file) — 5 tests:
+  - `test_pull_employees_runs_daily_not_every_15_min` — regression on the cadence change (both negative + positive cron-string assertion)
+  - `test_pull_salary_structures_still_daily` / `test_stalled_signings_still_daily` — confirms other schedules unaffected
+  - `test_json_parses_as_list` + `test_every_script_has_required_fields` — shape-check on `client_script.json` so broken JSON / missing fields surface offline
+  - `test_sync_now_button_script_present` — verifies the new script is present, hits the right endpoint, has a confirm dialog, gates by role, and reads `?manual_sync=1`
+
+### Tests
+
+- **195 passing** (was 188), 3 skipped
+- 7 new tests across `test_workspace_fixture.py` and `test_hooks_and_client_scripts.py`
+
+### After deploy + migrate — operational note
+
+1. Scheduler reconfigures automatically on next migrate.
+2. Workspace + Client Script auto-install via existing fixture filters in `hooks.py`.
+3. HR will see the new "Sync from greytHR Now" card on `/app/greythr` workspace and a matching button on top of `/app/greythr-sync-log` list view.
+4. Old `*/15 * * * *` schedule stops firing immediately after deploy — no orphan jobs to clean up.
+
+### Why not delete `_pull` or the scheduled entry path
+
+`pull_employees.run` is still the scheduled entry point — only the cadence changed. Both the manual `run_now` (enqueues + returns) and the scheduled `run` (runs inline) share the same `_pull` core function. One code path, two trigger frequencies.

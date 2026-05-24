@@ -78,11 +78,33 @@ class TestWorkspaceDefinition(unittest.TestCase):
                          "'Removing orphan Workspaces' migrate step deletes it.")
         self.assertEqual(ws["public"], 1)
 
-    def test_exactly_15_shortcuts(self):
+    def test_exactly_16_shortcuts(self):
         ws = _load_workspace()
         shortcuts = ws.get("shortcuts", [])
-        self.assertEqual(len(shortcuts), 15,
-                         f"Expected 15 shortcuts (per spec §3), got {len(shortcuts)}")
+        self.assertEqual(len(shortcuts), 16,
+                         f"Expected 16 shortcuts (15 original + 'Sync from "
+                         f"greytHR Now' added 2026-05-24), got {len(shortcuts)}")
+
+    def test_manual_sync_shortcut_present(self):
+        """The 'Sync from greytHR Now' shortcut is the HR-facing trigger
+        for an on-demand pull from greytHR (paired with the daily 6 AM cron
+        in hooks.py). The Client Script reads ?manual_sync=1 to auto-open
+        the confirm dialog when arriving via this shortcut."""
+        ws = _load_workspace()
+        sync_shortcut = next(
+            (s for s in ws["shortcuts"] if s["label"] == "Sync from greytHR Now"),
+            None,
+        )
+        self.assertIsNotNone(
+            sync_shortcut,
+            "Missing 'Sync from greytHR Now' shortcut. Without it HR can only "
+            "trigger a manual sync via the Sync Log list-view button."
+        )
+        self.assertEqual(sync_shortcut["type"], "DocType")
+        self.assertEqual(sync_shortcut["link_to"], "greytHR Sync Log")
+        self.assertIn("manual_sync=1", sync_shortcut["url"],
+                      "Shortcut url must include manual_sync=1 so the "
+                      "Client Script auto-opens the confirm dialog.")
 
     def test_every_shortcut_has_label_and_url(self):
         ws = _load_workspace()
