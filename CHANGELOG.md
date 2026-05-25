@@ -1555,3 +1555,112 @@ This is exactly why Option A was chosen over Option B: zero code rework needed f
 ### Zero data deletion
 
 The setup task only CREATES records (3 placeholders + backfills the holiday_list field on existing employees). No deletions, no destructive updates. The backfill uses `update_modified=False` so it doesn't trigger spurious "modified" timestamp bumps. Memory rule `never_delete_employee_records.md` honoured.
+
+---
+
+## [Unreleased] — Separation letter polish: 5 bug-fix sweep (2026-05-26)
+
+### Visible bugs in the first live separation letters
+
+HR triggered the first Experience + Relieving letters via Employee Separation submit. Letters generated and attached, but with 5 visible issues:
+
+1. **Filename** used the Separation docname: `Relieving Letter - HR-EMP-SEP-2026-00001.pdf` (HR-facing identifier, not employee-facing)
+2. **Ref No.** inside the letter showed the Separation docname too
+3. **Last working day** was blank — letter read *"with effect from the close of business hours on ."*
+4. **Empty designation** rendered as a gap: *"Nalluri Sudha, , has been relieved..."* (comma-empty-comma)
+5. **greytHR's mixed-case names** ("nalluri sudha", "MOHD BALEEGH AHMED") rendered as-is in formal letters
+
+All 5 fixed in this commit.
+
+### Fixes
+
+#### Bug 1 — Dual attachment with GDS#### filename
+
+`generate_and_deliver` (in `letters/non_signing.py`) extended with two optional params:
+- `also_attach_to` — second `(doctype, docname)` tuple. PDF attached to BOTH records.
+- `file_name_suffix` — override the default filename slug.
+
+`hooks_handlers/employee_separation.py` updated for both letter types:
+- **Primary attachment**: Employee record (the letter belongs to the person, lives permanently on their Frappe Employee)
+- **Secondary attachment**: Employee Separation (HR's workflow view also has it)
+- **Filename**: `Experience Letter - GDS0021.pdf` (employee identifier in both attachments)
+
+Per-attachment graceful failure: if the secondary attach errors, primary + email still succeed.
+
+#### Bug 2 — `ref_number` = employee.name
+
+`build_experience_context` (also drives `build_relieving_context`) now sets `ref_number = employee.name` (GDS####) instead of `separation_doc.name` (HR-EMP-SEP-####).
+
+#### Bug 3 — `last_working_day` falls back to `Employee.relieving_date`
+
+Frappe HR's canonical "last working day" field is `Employee.relieving_date` (set when status flips to Left). The Separation doc rarely has a relieving_date set. Old chain checked only Separation's fields → both empty → blank letter.
+
+New chain in `build_experience_context`:
+```python
+last_working_day = (
+    getattr(employee, "relieving_date", None)
+    or getattr(separation_doc, "relieving_date", None)
+    or getattr(separation_doc, "boarding_end_date", None)
+)
+```
+
+For "nalluri sudha" (GDS0021) — her Employee.relieving_date was populated years ago by the greytHR sync. New chain finds it on the first lookup. Letter now reads correctly: *"with effect from the close of business hours on 30 September 2022."*
+
+#### Bug 4 — Jinja conditionals for empty designation + missing date
+
+Templates `experience_letter.html` and `relieving_letter.html` now wrap optional fields in `{% if X %}...{% endif %}` blocks:
+
+- Experience: *"...served in the capacity of X."* now ONLY renders when designation is set
+- Relieving: *"...Nalluri Sudha, X, has been relieved..."* — the commas + designation only render when designation is set
+- Both: *"...to <date>..."* and *"...on <date>..."* only render when the date is set
+
+No more comma-empty-comma artifacts or "to ," gaps.
+
+#### Bug 5 — `_format_name` helper for mixed-case data
+
+New `_format_name(name)` in `letters/merger.py`:
+- All-uppercase ("MOHD BALEEGH AHMED") → title-case ("Mohd Baleegh Ahmed")
+- All-lowercase ("nalluri sudha") → title-case ("Nalluri Sudha")
+- Already title-cased ("Avinash Nalluri") → unchanged
+- Mixed-case ("McDonald Smith") → preserved as-is (avoids flattening "McDonald" → "Mcdonald")
+- Empty / None → ""
+
+Applied to `employee_name` + `designation` in `build_experience_context` (and via delegation, `build_relieving_context`). Letters now read with proper capitalisation regardless of greytHR's casing.
+
+Not applied to other letter context builders YET — promotion/service certificate work from HR-entered or Employee.first_name data which is often already cased correctly. Easy to extend if needed.
+
+### Files
+
+- `greythr_bridge/letters/non_signing.py`:
+  - `generate_and_deliver` — new `also_attach_to` + `file_name_suffix` params
+  - Extracted `_create_file_attachment` helper (DRY between primary + secondary attach)
+- `greythr_bridge/letters/merger.py`:
+  - New `_format_name()` helper (with detailed docstring on the all-upper / all-lower / mixed-case strategy)
+  - `build_experience_context` — ref_number, last_working_day fallback, name formatting
+- `greythr_bridge/hooks_handlers/employee_separation.py` — both `send_experience_letter` and `send_relieving_letter` updated for dual-attach + GDS#### filename
+- `greythr_bridge/templates/letters/html/experience_letter.html` — Jinja conditionals
+- `greythr_bridge/templates/letters/html/relieving_letter.html` — Jinja conditionals
+- `greythr_bridge/tests/test_letters.py` — 12 new tests:
+  - 2 template renders with empty designation + missing date (regression for Bug 4)
+  - 6 `_format_name` cases (lowercase, uppercase, already-cased, mixed-case McDonald, empty/None, whitespace normalisation)
+  - 3 `build_experience_context` cases (ref_number, last_working_day chain, name formatting)
+  - 1 `generate_and_deliver` dual-attach test (verifies 2 File rows created with same GDS#### filename)
+
+### Tests
+
+- **254 passing** (was 242), 3 skipped
+
+### What HR sees after deploy
+
+Re-trigger the Separation submit for any employee. The new PDFs should:
+
+- Be named `Experience Letter - GDS####.pdf` and `Relieving Letter - GDS####.pdf`
+- Have `Ref No. GDS####` inside the letter header
+- Show the correct last working day (from Employee.relieving_date)
+- Render cleanly when designation is missing (no comma-empty-comma)
+- Show the employee's name properly cased (e.g., "Nalluri Sudha" instead of "nalluri sudha")
+- Be attached to BOTH the Employee record (permanent) AND the Employee Separation (workflow view)
+
+### Zero data deletion
+
+All changes are letter-generation / display tweaks. No Employee record modifications, no mapping updates. Memory rule `never_delete_employee_records.md` continues to be honoured.

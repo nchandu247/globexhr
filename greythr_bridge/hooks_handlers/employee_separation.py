@@ -39,7 +39,12 @@ def on_separation_submitted(doc, method):
 
 
 def send_experience_letter(separation_name: str) -> None:
-    """Background job: generate Experience Letter PDF, attach, email."""
+    """Background job: generate Experience Letter PDF, attach, email.
+
+    Attaches to BOTH the Employee record (primary — permanent file on the
+    person) AND the Employee Separation (secondary — HR's separation
+    workflow view). Filename uses the employee's GDS#### identifier.
+    """
     try:
         separation = frappe.get_doc("Employee Separation", separation_name)
         if not separation.employee:
@@ -56,8 +61,10 @@ def send_experience_letter(separation_name: str) -> None:
         generate_and_deliver(
             template_filename="experience_letter.html",
             context=context,
-            attach_to=("Employee Separation", separation_name),
+            attach_to=("Employee", employee.name),  # primary: belongs to the person
+            also_attach_to=("Employee Separation", separation_name),  # also in HR's workflow
             file_label="Experience Letter",
+            file_name_suffix=employee.name,  # GDS#### in filename
             employee_doc=employee,
             email_subject="Your Experience Letter — Globex Digital Solutions",
             prefer_personal_email=True,  # separation — company email may be off
@@ -70,7 +77,10 @@ def send_experience_letter(separation_name: str) -> None:
 
 
 def send_relieving_letter(separation_name: str) -> None:
-    """Background job: generate Relieving Letter PDF, attach, email."""
+    """Background job: generate Relieving Letter PDF, attach, email.
+
+    Same dual-attachment pattern as send_experience_letter.
+    """
     try:
         separation = frappe.get_doc("Employee Separation", separation_name)
         if not separation.employee:
@@ -87,8 +97,10 @@ def send_relieving_letter(separation_name: str) -> None:
         generate_and_deliver(
             template_filename="relieving_letter.html",
             context=context,
-            attach_to=("Employee Separation", separation_name),
+            attach_to=("Employee", employee.name),
+            also_attach_to=("Employee Separation", separation_name),
             file_label="Relieving Letter",
+            file_name_suffix=employee.name,
             employee_doc=employee,
             email_subject="Your Relieving Letter — Globex Digital Solutions",
             prefer_personal_email=True,

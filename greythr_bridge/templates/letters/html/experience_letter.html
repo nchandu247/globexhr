@@ -15,16 +15,17 @@
   <p>
     This is to certify that <strong>{{ employee_name }}</strong> was employed
     with Globex Digital Solutions Pvt Ltd from
-    <strong>{{ date_of_joining }}</strong> to
-    <strong>{{ last_working_day }}</strong>{% if tenure %}, a total tenure
-    of <strong>{{ tenure }}</strong>{% endif %}.
+    <strong>{{ date_of_joining }}</strong>{% if last_working_day %} to
+    <strong>{{ last_working_day }}</strong>{% endif %}{% if tenure %}, a total
+    tenure of <strong>{{ tenure }}</strong>{% endif %}.
   </p>
 
   <p>
-    During this period, {{ employee_name }} served in the capacity of
-    <strong>{{ designation }}</strong>. We found {{ employee_name }} to be
-    a sincere, hardworking, and professional individual who consistently
-    demonstrated a positive attitude towards work and colleagues.
+    {% if designation %}During this period, {{ employee_name }} served in the
+    capacity of <strong>{{ designation }}</strong>. {% endif %}We found
+    {{ employee_name }} to be a sincere, hardworking, and professional
+    individual who consistently demonstrated a positive attitude towards
+    work and colleagues.
   </p>
 
   <p>

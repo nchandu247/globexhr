@@ -385,6 +385,45 @@ def build_offer_context(doc) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _format_name(name) -> str:
+    """
+    Pretty-case a name string for letter display.
+
+    greytHR returns names in mixed casing — sometimes all lowercase
+    ("nalluri sudha"), sometimes all uppercase ("MOHD BALEEGH AHMED").
+    For formal letters we want "Nalluri Sudha" / "Mohd Baleegh Ahmed".
+
+    Strategy:
+      - Empty / None → "" (caller decides how to handle missing)
+      - Each word: if ALL-upper or ALL-lower → title-case it
+                   if mixed-case (e.g., "McDonald", "O'Brien") → preserve as-is
+      - Joined back with single spaces
+
+    Examples:
+      "nalluri sudha"       → "Nalluri Sudha"
+      "MOHD BALEEGH AHMED"  → "Mohd Baleegh Ahmed"
+      "Avinash Nalluri"     → "Avinash Nalluri"   (already cased — no change)
+      "McDonald Smith"      → "McDonald Smith"    (mixed-case preserved)
+      ""                    → ""
+    """
+    if not name:
+        return ""
+    if not isinstance(name, str):
+        name = str(name)
+    words = name.strip().split()
+    out = []
+    for word in words:
+        if not word:
+            continue
+        # All-upper OR all-lower → safe to title-case
+        if word.isupper() or word.islower():
+            out.append(word.capitalize())
+        else:
+            # Mixed-case → preserve (handles McDonald, O'Brien, iPhone-style)
+            out.append(word)
+    return " ".join(out)
+
+
 def _resolve_signatory_name() -> str:
     """Get the configured HR signatory's full name from greytHR Settings."""
     try:
@@ -542,26 +581,50 @@ def build_promotion_context(emp_doc, old_designation: str, new_designation: str,
 
 
 def build_experience_context(separation_doc) -> dict:
-    """Context for Experience Letter (issued on Employee Separation)."""
+    """Context for Experience Letter (issued on Employee Separation).
+
+    Bug fixes (2026-05-26):
+      - ref_number: use employee.name (GDS####) instead of separation.name
+        (HR-EMP-SEP-#### is internal, not employee-facing).
+      - last_working_day: prefer Employee.relieving_date — Frappe HR's
+        canonical "last working day" field, populated when status flips to
+        Left. Separation doc may have a relieving_date too but the Employee
+        record is the source of truth.
+      - employee_name + designation: run through _format_name() so greytHR's
+        mixed-case data ("nalluri sudha", "MOHD BALEEGH AHMED") renders as
+        properly-cased ("Nalluri Sudha", "Mohd Baleegh Ahmed") in the
+        formal letter.
+    """
     import frappe
     employee = frappe.get_doc("Employee", separation_doc.employee) if separation_doc.employee else None
 
     if employee:
         date_of_joining = getattr(employee, "date_of_joining", None)
-        last_working_day = getattr(separation_doc, "relieving_date", None) or \
-                           getattr(separation_doc, "boarding_end_date", None)
+        # Last working day: prefer Employee.relieving_date (Frappe HR's
+        # canonical field). Fall back to Separation's date fields only if
+        # the Employee record doesn't have it yet.
+        last_working_day = (
+            getattr(employee, "relieving_date", None)
+            or getattr(separation_doc, "relieving_date", None)
+            or getattr(separation_doc, "boarding_end_date", None)
+        )
         return {
-            "ref_number":         separation_doc.name,
+            # ref_number: employee identifier (GDS####), not separation docname
+            "ref_number":         employee.name,
             "current_date":       today_str(),
-            "employee_name":      getattr(employee, "employee_name", "") or "",
-            "designation":        getattr(employee, "designation", "") or "",
+            # _format_name normalises greytHR's mixed-case data for letter display
+            "employee_name":      _format_name(
+                getattr(employee, "employee_name", "")
+                or getattr(employee, "first_name", "")
+            ),
+            "designation":        _format_name(getattr(employee, "designation", "") or ""),
             "date_of_joining":    fmt_date(date_of_joining),
             "last_working_day":   fmt_date(last_working_day),
             "tenure":             _tenure(date_of_joining, last_working_day),
             "signatory_name":     _resolve_signatory_name(),
         }
     return {
-        "ref_number":     separation_doc.name,
+        "ref_number":     separation_doc.name,  # no employee context to fall back to
         "current_date":   today_str(),
         "employee_name":  "",
         "designation":    "",

@@ -27,6 +27,8 @@ def generate_and_deliver(
     email_subject: str = "",
     email_body_html: str = "",
     prefer_personal_email: bool = False,
+    also_attach_to: tuple[str, str] | None = None,
+    file_name_suffix: str | None = None,
 ) -> bytes:
     """
     Render PDF, attach to source doc, email to employee.
@@ -34,7 +36,7 @@ def generate_and_deliver(
     Args:
         template_filename: e.g. "increment_letter.html"
         context:           dict of Jinja2 variables for the template
-        attach_to:         (doctype, docname) — the source record
+        attach_to:         (doctype, docname) — the PRIMARY source record
         file_label:        human-friendly name shown in attachment list,
                            e.g. "Increment Letter"
         employee_doc:      Frappe Employee doc — used to resolve email address.
@@ -44,6 +46,18 @@ def generate_and_deliver(
         prefer_personal_email:
             True  → personal_email > company_email > skip (separation letters)
             False → company_email > personal_email > skip (active-employee letters)
+        also_attach_to:    optional (doctype, docname) — a SECOND record to
+                           also attach the same PDF to. e.g., for separation
+                           letters: primary = Employee (so the letter lives on
+                           the employee's permanent record), secondary =
+                           Employee Separation (so HR's separation workflow
+                           view also has it).
+        file_name_suffix:  optional override for the filename suffix. If None,
+                           uses `attach_to`'s docname. Pass the employee's
+                           GDS#### identifier here when attach_to is the
+                           Separation but you want the filename to read
+                           "Relieving Letter - GDS0021.pdf" not
+                           "Relieving Letter - HR-EMP-SEP-2026-00001.pdf".
 
     Returns: PDF bytes (also attached + emailed as side effects).
     """
@@ -55,21 +69,36 @@ def generate_and_deliver(
             f"({len(pdf_bytes) if pdf_bytes else 0} bytes)"
         )
 
-    # 2. Attach as private File against source doc
+    # 2. Build the file_name once — used for both attachments AND email.
+    #    Prefer the explicit suffix when provided so HR sees the employee
+    #    identifier (GDS####) in the filename regardless of which record the
+    #    file is attached to.
     doctype, docname = attach_to
     safe_label = file_label.replace("/", "-")
-    file_name = f"{safe_label} - {docname}.pdf"
-    file_doc = frappe.get_doc({
-        "doctype": "File",
-        "file_name": file_name,
-        "attached_to_doctype": doctype,
-        "attached_to_name": docname,
-        "content": pdf_bytes,
-        "is_private": 1,
-    })
-    file_doc.insert(ignore_permissions=True)
+    name_slug = file_name_suffix or docname
+    file_name = f"{safe_label} - {name_slug}.pdf"
 
-    # 3. Resolve email and send (if employee_doc + addresses available)
+    # 3. Attach to the PRIMARY record
+    _create_file_attachment(file_name, pdf_bytes, doctype, docname)
+
+    # 4. (Optional) attach to a SECOND record with the same filename.
+    #    Frappe creates a separate File row per attachment but the bytes are
+    #    deduplicated by Frappe's file storage layer (content hash).
+    if also_attach_to:
+        also_dt, also_dn = also_attach_to
+        try:
+            _create_file_attachment(file_name, pdf_bytes, also_dt, also_dn)
+        except Exception as exc:
+            # Secondary attachment is best-effort — don't fail the whole
+            # letter generation if it errors. Primary attachment + email
+            # still succeed.
+            log_error(
+                f"non_signing: secondary attach to {also_dt}/{also_dn} "
+                f"failed: {str(exc)[:200]}",
+                "greytHR Letter Secondary Attach Error",
+            )
+
+    # 5. Resolve email and send (if employee_doc + addresses available)
     if employee_doc is not None:
         recipient = _resolve_email(employee_doc, prefer_personal_email)
         if recipient:
@@ -100,6 +129,20 @@ def generate_and_deliver(
             )
 
     return pdf_bytes
+
+
+def _create_file_attachment(file_name: str, pdf_bytes: bytes,
+                             doctype: str, docname: str) -> None:
+    """Insert a File doc attaching pdf_bytes to (doctype, docname)."""
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": file_name,
+        "attached_to_doctype": doctype,
+        "attached_to_name": docname,
+        "content": pdf_bytes,
+        "is_private": 1,
+    })
+    file_doc.insert(ignore_permissions=True)
 
 
 def _resolve_email(employee_doc, prefer_personal: bool) -> str | None:

@@ -802,6 +802,49 @@ class TestPhaseBHTMLRendering(unittest.TestCase):
         self.assertIn("presently", html)
         self.assertIn("employed with Globex", html)
 
+    # ── Bug 4 (2026-05-26): templates handle empty designation cleanly ───────
+
+    def test_experience_template_handles_empty_designation_and_last_working_day(self):
+        """For records where greytHR didn't return designation OR the
+        Employee's relieving_date is still being set, the template must
+        render without awkward gaps / dangling 'to' phrases."""
+        context = {
+            "ref_number": "GDS0021",
+            "current_date": "26 May 2026",
+            "employee_name": "Nalluri Sudha",
+            "designation": "",          # empty
+            "date_of_joining": "12 November 2017",
+            "last_working_day": "",     # empty
+            "tenure": "8 years and 6 months",
+            "signatory_name": "Test",
+        }
+        html = self._render("experience_letter.html", context)
+        # Must NOT contain the "served in the capacity of ." gap
+        self.assertNotIn("served in the capacity of  .", html)
+        self.assertNotIn("served in the capacity of  </strong>", html)
+        # Must NOT contain dangling "to  ," (empty last_working_day)
+        self.assertNotIn("from <strong>12 November 2017</strong> to <strong></strong>", html)
+        # Should still mention tenure
+        self.assertIn("8 years and 6 months", html)
+
+    def test_relieving_template_handles_empty_designation_and_last_working_day(self):
+        context = {
+            "ref_number": "GDS0021",
+            "current_date": "26 May 2026",
+            "employee_name": "Nalluri Sudha",
+            "designation": "",
+            "date_of_joining": "12 November 2017",
+            "last_working_day": "",
+            "tenure": "8 years and 6 months",
+            "signatory_name": "Test",
+        }
+        html = self._render("relieving_letter.html", context)
+        # Must NOT contain "Nalluri Sudha, , has been relieved" (empty designation between commas)
+        self.assertNotIn(", , has", html)
+        # Must NOT contain "business hours on  ." (empty last_working_day)
+        self.assertNotIn("business hours on <strong></strong>", html)
+        self.assertIn("Nalluri Sudha", html)
+
 
 class TestTenureCalculation(unittest.TestCase):
     """Test the _tenure() helper used by Experience/Relieving/Service Cert."""
@@ -845,6 +888,189 @@ class TestPhaseBCustomFields(unittest.TestCase):
                           "custom_promotion_letter_attached",
                           "custom_service_certificate_issued_at"):
             self.assertIn(expected, fieldnames, f"Missing Phase B field: {expected}")
+
+
+class TestFormatName(unittest.TestCase):
+    """The _format_name helper normalises greytHR's mixed-case name data
+    for formal letter display. Added 2026-05-26 — greytHR returns names
+    as "nalluri sudha" (lowercase) or "MOHD BALEEGH AHMED" (uppercase);
+    we want letter output to read "Nalluri Sudha" / "Mohd Baleegh Ahmed"."""
+
+    def test_lowercase_input_gets_title_cased(self):
+        from greythr_bridge.letters.merger import _format_name
+        self.assertEqual(_format_name("nalluri sudha"), "Nalluri Sudha")
+
+    def test_uppercase_input_gets_title_cased(self):
+        from greythr_bridge.letters.merger import _format_name
+        self.assertEqual(_format_name("MOHD BALEEGH AHMED"), "Mohd Baleegh Ahmed")
+
+    def test_already_title_cased_unchanged(self):
+        from greythr_bridge.letters.merger import _format_name
+        self.assertEqual(_format_name("Avinash Nalluri"), "Avinash Nalluri")
+
+    def test_mixed_case_word_preserved(self):
+        """Word containing both upper and lowercase letters (e.g., 'McDonald')
+        must be preserved as-is, not title-cased into 'Mcdonald'."""
+        from greythr_bridge.letters.merger import _format_name
+        # McDonald has internal capital — must NOT be flattened
+        self.assertEqual(_format_name("McDonald Smith"), "McDonald Smith")
+        # Only McDonald is mixed; Smith is title-case already
+        self.assertEqual(_format_name("McDonald SMITH"), "McDonald Smith")
+
+    def test_empty_or_none_returns_empty_string(self):
+        from greythr_bridge.letters.merger import _format_name
+        self.assertEqual(_format_name(""), "")
+        self.assertEqual(_format_name(None), "")
+        self.assertEqual(_format_name("   "), "")
+
+    def test_extra_whitespace_normalised_to_single_spaces(self):
+        from greythr_bridge.letters.merger import _format_name
+        self.assertEqual(_format_name("  nalluri    sudha  "), "Nalluri Sudha")
+
+
+class TestSeparationContextBuilderFixes(unittest.TestCase):
+    """Bugs 2 + 3 (2026-05-26): build_experience_context (also drives
+    build_relieving_context) must use employee.name as ref_number and
+    prefer Employee.relieving_date over Separation's date fields for
+    last_working_day."""
+
+    def _make_separation_with_employee(self, employee_attrs):
+        """Build mock separation + mock employee, wire frappe.get_doc to
+        return the employee."""
+        sep = MagicMock()
+        sep.name = "HR-EMP-SEP-2026-00001"
+        sep.employee = "GDS0021"
+        # Separation has NO relieving_date / boarding_end_date by default
+        sep.relieving_date = None
+        sep.boarding_end_date = None
+
+        emp = MagicMock()
+        emp.name = "GDS0021"
+        for k, v in employee_attrs.items():
+            setattr(emp, k, v)
+        # Make MagicMock's getattr defaults match what merger.py reads
+        emp.get = lambda field, *a, **kw: employee_attrs.get(field)
+
+        return sep, emp
+
+    def test_ref_number_uses_employee_name_not_separation_name(self):
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_separation_with_employee({
+            "employee_name": "nalluri sudha",
+            "first_name": "nalluri sudha",
+            "designation": "",
+            "date_of_joining": "2017-11-12",
+            "relieving_date": "2022-09-30",
+        })
+        with patch("frappe.get_doc", return_value=emp):
+            context = merger.build_experience_context(sep)
+        # Bug 2 fix: ref_number is the employee's GDS#### identifier
+        self.assertEqual(context["ref_number"], "GDS0021")
+        # NOT the separation's docname (which is what the bug used to show)
+        self.assertNotEqual(context["ref_number"], "HR-EMP-SEP-2026-00001")
+
+    def test_last_working_day_prefers_employee_relieving_date(self):
+        """Bug 3 fix: Employee.relieving_date is Frappe HR's canonical
+        last-working-day field. Must be preferred over Separation's
+        boarding_end_date / relieving_date (which are often blank).
+        We assert via fmt_date — when employee.relieving_date is set,
+        fmt_date receives that value (proven via mock-call inspection)
+        instead of being short-circuited to '' by the empty check."""
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_separation_with_employee({
+            "employee_name": "nalluri sudha",
+            "first_name": "nalluri sudha",
+            "designation": "",
+            "date_of_joining": "2017-11-12",
+            "relieving_date": "2022-09-30",  # SET on employee
+        })
+        # Patch fmt_date to a sentinel so we can verify it was called with
+        # the employee's relieving_date (proving the new fallback chain
+        # reached the right field). Before bug 3 fix, it would have been
+        # called with None (Separation's empty fields) → returned "".
+        captured = {}
+        def _capture_fmt_date(v):
+            if "relieving" not in captured:
+                captured["relieving"] = v if v else None
+            return str(v) if v else ""
+        with patch("frappe.get_doc", return_value=emp), \
+             patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
+            context = merger.build_experience_context(sep)
+        # last_working_day must be truthy (the bug had it as "")
+        self.assertTrue(context["last_working_day"],
+            "last_working_day must NOT be empty — Bug 3's symptom was that "
+            "this field was '' because the old fallback chain checked only "
+            "separation.relieving_date / boarding_end_date (both blank).")
+        # And specifically it should be the employee's relieving_date
+        self.assertEqual(context["last_working_day"], "2022-09-30")
+
+    def test_employee_name_run_through_format_name(self):
+        """Bug 5 fix: greytHR lowercase 'nalluri sudha' renders as
+        properly-cased 'Nalluri Sudha' in formal letters."""
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_separation_with_employee({
+            "employee_name": "nalluri sudha",
+            "first_name": "nalluri sudha",
+            "designation": "ENGINEER",
+            "date_of_joining": "2017-11-12",
+            "relieving_date": "2022-09-30",
+        })
+        with patch("frappe.get_doc", return_value=emp):
+            context = merger.build_experience_context(sep)
+        self.assertEqual(context["employee_name"], "Nalluri Sudha")
+        # Same for designation
+        self.assertEqual(context["designation"], "Engineer")
+
+
+class TestSeparationLetterDualAttachment(unittest.TestCase):
+    """Bug 1 (2026-05-26): separation letters attach to BOTH the Employee
+    (primary, for permanent person-record) AND the Separation doc (secondary,
+    for HR workflow view). Filename uses the Employee's GDS#### identifier
+    regardless of which record it's attached to."""
+
+    def test_dual_attach_with_employee_filename(self):
+        """generate_and_deliver creates 2 File rows when also_attach_to is
+        passed; both use the file_name_suffix (the GDS#### identifier) in
+        the filename instead of either attachment's docname."""
+        from greythr_bridge.letters import non_signing
+        # Spy on what frappe.get_doc({"doctype": "File", ...}) gets called with
+        created_file_docs = []
+
+        def _capture_get_doc(payload):
+            mock = MagicMock()
+            mock.insert = MagicMock()
+            if isinstance(payload, dict) and payload.get("doctype") == "File":
+                created_file_docs.append(payload)
+            return mock
+
+        with patch("greythr_bridge.letters.non_signing.frappe") as frappe_mock:
+            frappe_mock.get_doc.side_effect = _capture_get_doc
+            with patch.object(non_signing, "merge_to_pdf_via_html",
+                              return_value=b"x" * 10000):  # fake non-empty PDF
+                non_signing.generate_and_deliver(
+                    template_filename="experience_letter.html",
+                    context={"ref_number": "GDS0021"},
+                    attach_to=("Employee", "GDS0021"),
+                    also_attach_to=("Employee Separation", "HR-EMP-SEP-2026-00001"),
+                    file_label="Experience Letter",
+                    file_name_suffix="GDS0021",
+                    employee_doc=None,  # skip email
+                )
+
+        # Two File attachments created
+        self.assertEqual(len(created_file_docs), 2)
+        # Both use the same filename suffix (GDS0021), not the separation docname
+        for fdoc in created_file_docs:
+            self.assertIn("GDS0021", fdoc["file_name"])
+            self.assertNotIn("HR-EMP-SEP", fdoc["file_name"])
+        # Primary attaches to Employee
+        primary = created_file_docs[0]
+        self.assertEqual(primary["attached_to_doctype"], "Employee")
+        self.assertEqual(primary["attached_to_name"], "GDS0021")
+        # Secondary attaches to Employee Separation
+        secondary = created_file_docs[1]
+        self.assertEqual(secondary["attached_to_doctype"], "Employee Separation")
+        self.assertEqual(secondary["attached_to_name"], "HR-EMP-SEP-2026-00001")
 
 
 if __name__ == "__main__":

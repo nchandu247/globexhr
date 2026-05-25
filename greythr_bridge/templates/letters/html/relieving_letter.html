@@ -13,10 +13,10 @@
 
 <div class="section">
   <p>
-    This is to confirm that <strong>{{ employee_name }}</strong>,
-    {{ designation }}, has been relieved from the services of Globex Digital
-    Solutions Pvt Ltd with effect from the close of business hours on
-    <strong>{{ last_working_day }}</strong>.
+    This is to confirm that <strong>{{ employee_name }}</strong>{% if designation %},
+    {{ designation }},{% endif %} has been relieved from the services of
+    Globex Digital Solutions Pvt Ltd{% if last_working_day %} with effect from
+    the close of business hours on <strong>{{ last_working_day }}</strong>{% endif %}.
   </p>
 
   <p>
