@@ -352,3 +352,233 @@ def test_inspect_greythr_employee_handles_api_error(patch_frappe):
     assert "greythr_api_error" in result
     assert "RuntimeError" in result["greythr_api_error"]
     assert "404" in result["greythr_api_error"]
+
+
+# ── force_resync_employee — HR repair tool for broken mappings ────────────────
+
+def test_force_resync_requires_system_manager(patch_frappe):
+    patch_frappe.get_roles.return_value = ["HR Manager"]
+    patch_frappe.throw.side_effect = PermissionError("Only System Manager")
+
+    from greythr_bridge.utils.sync_diagnostics import force_resync_employee
+    try:
+        force_resync_employee("GDS0215", "250")
+        assert False, "Should have raised PermissionError"
+    except PermissionError:
+        pass
+
+
+def test_force_resync_requires_both_args(patch_frappe):
+    _setup_admin_role(patch_frappe)
+
+    from greythr_bridge.utils.sync_diagnostics import force_resync_employee
+    assert "error" in force_resync_employee("", "250")
+    assert "error" in force_resync_employee("GDS0215", "")
+
+
+def test_force_resync_aborts_if_greythr_returns_different_id(patch_frappe):
+    """Safety: if we ask greytHR for ID 250 but the API returns data with
+    employeeId=999, refuse to apply it. Otherwise we'd corrupt the slot
+    with mismatched data."""
+    _setup_admin_role(patch_frappe)
+    employee_doc = MagicMock()
+    employee_doc.name = "GDS0215"
+    patch_frappe.get_doc.return_value = employee_doc
+
+    fake_response = {"data": [{
+        "employeeId": 999,           # DIFFERENT from requested 250
+        "employeeNo": "GDS0999",
+        "name": "Someone Else",
+        "email": "someone@example.com",
+    }]}
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=fake_response):
+        result = sync_diagnostics.force_resync_employee("GDS0215", "250")
+
+    assert "error" in result
+    assert "250" in result["error"] and "999" in result["error"]
+    # Critically — we did NOT save anything
+    employee_doc.save.assert_not_called()
+
+
+def test_force_resync_corrects_existing_mapping(patch_frappe):
+    """Happy path: Frappe Employee + existing wrong mapping. After
+    force_resync, fields are updated AND mapping is corrected."""
+    _setup_admin_role(patch_frappe)
+
+    # Frappe Employee GDS0215 currently has wrong (syed shabber) data
+    employee_doc = MagicMock()
+    employee_doc.name = "GDS0215"
+    field_state = {
+        "employee_number": "GDS0144",
+        "first_name": "syed shabber",
+        "company_email": "syedshabber121@gmail.com",
+        "status": "Left",
+        "date_of_joining": "2021-09-01",
+        "relieving_date": "2022-09-30",
+        "custom_greythr_employee_id": "159",
+    }
+    employee_doc.get.side_effect = lambda f, *a, **kw: field_state.get(f)
+    def _set(field, value):
+        field_state[field] = value
+    employee_doc.set.side_effect = _set
+
+    mapping_doc = MagicMock()
+    mapping_doc.name = "MAP-c3ug4edk5j"
+
+    # get_doc is called twice: once for Employee, once for Mapping
+    patch_frappe.get_doc.side_effect = [employee_doc, mapping_doc]
+
+    # get_all is called once: find existing mapping by frappe_employee
+    patch_frappe.get_all.return_value = [{
+        "name": "MAP-c3ug4edk5j",
+        "greythr_employee_id": "159",     # WRONG — points at older record
+        "greythr_employee_no": "GDS0144",
+    }]
+
+    # greytHR returns Shabbir Syed's data for ID 250
+    fake_response = {"data": [{
+        "employeeId": 250,
+        "employeeNo": "GDS0215",
+        "name": "Shabbir Syed",
+        "email": "syedshabber121@gmail.com",
+        "dateOfJoin": "2023-04-03",
+        "leavingDate": "2024-03-29",
+        "leftorg": True,
+    }]}
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=fake_response):
+        result = sync_diagnostics.force_resync_employee("GDS0215", "250")
+
+    assert result["result"] == "OK"
+    assert result["frappe_employee"] == "GDS0215"
+    assert result["greythr_id"] == "250"
+    assert "corrected" in result["mapping_action"]
+
+    # Employee fields were overwritten with Shabbir Syed's data
+    assert field_state["first_name"] == "Shabbir Syed"
+    assert field_state["employee_number"] == "GDS0215"
+    assert field_state["custom_greythr_employee_id"] == "250"
+    assert field_state["date_of_joining"] == "2023-04-03"
+    employee_doc.save.assert_called()
+
+    # Mapping was corrected
+    assert mapping_doc.greythr_employee_id == "250"
+    assert mapping_doc.greythr_employee_no == "GDS0215"
+    mapping_doc.save.assert_called()
+
+    # Changed fields documented in response for audit
+    assert "first_name" in result["fields_changed"]
+    assert result["fields_changed"]["first_name"]["before"] == "syed shabber"
+    assert result["fields_changed"]["first_name"]["after"] == "Shabbir Syed"
+
+
+def test_force_resync_creates_mapping_when_none_exists(patch_frappe):
+    """Edge case: Frappe Employee exists but has no mapping row yet.
+    force_resync should CREATE the mapping pointing at the given greytHR ID."""
+    _setup_admin_role(patch_frappe)
+
+    employee_doc = MagicMock()
+    employee_doc.name = "GDS9999"
+    employee_doc.get.return_value = None
+
+    new_mapping = MagicMock()
+    patch_frappe.new_doc.return_value = new_mapping
+    patch_frappe.get_doc.return_value = employee_doc
+    patch_frappe.get_all.return_value = []  # no existing mapping
+
+    fake_response = {"data": [{
+        "employeeId": 777,
+        "employeeNo": "GDS9999",
+        "name": "Test Person",
+        "email": "test@example.com",
+        "dateOfJoin": "2024-01-01",
+    }]}
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=fake_response):
+        result = sync_diagnostics.force_resync_employee("GDS9999", "777")
+
+    assert result["result"] == "OK"
+    assert "created" in result["mapping_action"]
+    # new mapping was inserted with the right values
+    assert new_mapping.greythr_employee_id == "777"
+    assert new_mapping.greythr_employee_no == "GDS9999"
+    assert new_mapping.frappe_employee == "GDS9999"
+    new_mapping.insert.assert_called()
+
+
+def test_force_resync_returns_error_if_frappe_employee_missing(patch_frappe):
+    """If get_doc raises DoesNotExistError, return a clear error message
+    naming the missing Frappe Employee."""
+    _setup_admin_role(patch_frappe)
+    # Promote frappe.DoesNotExistError to a real Exception subclass so the
+    # function's `except frappe.DoesNotExistError:` actually catches it.
+    import sys
+    class _FakeDNE(Exception):
+        pass
+    sys.modules["frappe"].DoesNotExistError = _FakeDNE
+    patch_frappe.get_doc.side_effect = _FakeDNE("not found")
+
+    from greythr_bridge.utils.sync_diagnostics import force_resync_employee
+    result = force_resync_employee("GDS-nonexistent", "250")
+    assert "error" in result
+    assert "not found" in result["error"]
+    # Restore the mock to avoid bleeding state into other tests
+    sys.modules["frappe"].DoesNotExistError = MagicMock()
+
+
+def test_force_resync_returns_error_if_greythr_api_fails(patch_frappe):
+    """If the greytHR API call itself fails, return a structured error
+    without touching the Frappe Employee."""
+    _setup_admin_role(patch_frappe)
+    employee_doc = MagicMock()
+    patch_frappe.get_doc.return_value = employee_doc
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee",
+                      side_effect=RuntimeError("greytHR 503")):
+        result = sync_diagnostics.force_resync_employee("GDS0215", "250")
+
+    assert "error" in result
+    assert "503" in result["error"] or "RuntimeError" in result["error"]
+    employee_doc.save.assert_not_called()
+
+
+def test_force_resync_logs_audit_entry(patch_frappe):
+    """Every successful resync writes a 'greytHR Forced Resync' Error Log
+    entry naming the slot, greytHR ID, mapping action, and changed fields."""
+    _setup_admin_role(patch_frappe)
+
+    employee_doc = MagicMock()
+    employee_doc.name = "GDS0215"
+    employee_doc.get.return_value = "old_value"
+    mapping_doc = MagicMock()
+    patch_frappe.get_doc.side_effect = [employee_doc, mapping_doc]
+    patch_frappe.get_all.return_value = [{
+        "name": "MAP-X",
+        "greythr_employee_id": "159",
+        "greythr_employee_no": "GDS0144",
+    }]
+
+    fake_response = {"data": [{
+        "employeeId": 250,
+        "employeeNo": "GDS0215",
+        "name": "Shabbir Syed",
+        "email": "syedshabber121@gmail.com",
+        "dateOfJoin": "2023-04-03",
+    }]}
+
+    from greythr_bridge.utils import sync_diagnostics
+    with patch.object(sync_diagnostics, "get_employee", return_value=fake_response):
+        sync_diagnostics.force_resync_employee("GDS0215", "250")
+
+    log_calls = patch_frappe.log_error.call_args_list
+    audit_logs = [c for c in log_calls
+                  if c.kwargs.get("title") == "greytHR Forced Resync"]
+    assert audit_logs, "Must write a 'greytHR Forced Resync' audit log entry"
+    audit_msg = audit_logs[0].kwargs.get("message", "")
+    assert "GDS0215" in audit_msg
+    assert "250" in audit_msg

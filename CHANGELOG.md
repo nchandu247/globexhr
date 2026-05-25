@@ -1360,3 +1360,88 @@ Trigger "Sync from greytHR Now":
 ### Zero data deletion
 
 v5 is just a refinement of the same defensive-matching mechanism — different secondary signal, same goal of preserving historical records. No deletions. Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — force_resync_employee HR repair tool (2026-05-25)
+
+### Why v5 wasn't enough
+
+v5 correctly REFUSED to overwrite the 4 stuck records (GDS0215, GDS0216, GDS0228, GDS0282) on every sync — but that left them stuck. The diagnostic revealed why:
+
+```json
+"frappe_record_now": {"name": "GDS0215", "employee_number": "GDS0144", ...},
+"greythr_mapping": {"greythr_employee_id": "159", "greythr_employee_no": "GDS0144"}
+```
+
+**The mapping itself was wrong.** Frappe slot `GDS0215` was bound to greytHR's GDS0144 (syed shabber, ID 159) — not greytHR's GDS0215 (Shabbir Syed, ID 250). Every sync followed the broken mapping via step-1 lookup (no defensive check) and re-overwrote with syed shabber's data. Manual field edits got reverted on the next sync.
+
+v5 can't auto-fix this: from inside the matching code, "wrong slot for this person" looks identical to "different person at this slot" (the Sundareshwaran/Thenmozhi case where the safe action is refuse, not overwrite). Needed: an explicit HR override.
+
+### Fix: `force_resync_employee(frappe_employee, greythr_id)`
+
+New whitelisted endpoint in `greythr_bridge/utils/sync_diagnostics.py`. HR calls with BOTH the Frappe slot AND the correct greytHR ID. The endpoint:
+
+1. Verifies System Manager role
+2. Fetches greytHR's data for the EXPLICITLY-NAMED greytHR ID (not via the broken mapping)
+3. Sanity-check: refuses if greytHR returns data for a different ID than asked
+4. Runs the mapper
+5. Overwrites Frappe Employee fields with the correct data
+6. Updates the mapping row's `greythr_employee_id` + `greythr_employee_no` to match
+7. (Creates the mapping if none existed)
+8. Writes a `"greytHR Forced Resync"` audit Error Log entry with the slot, the greytHR ID, the mapping action, and which fields changed
+9. Returns a JSON summary with before/after values per changed field
+
+**Bypasses `_find_frappe_employee` and `_is_different_employment` entirely** — this is the explicit "I know what I'm doing for THIS specific record" escape hatch.
+
+### Usage (HR runs after deploy)
+
+```
+POST /api/method/greythr_bridge.utils.sync_diagnostics.force_resync_employee?frappe_employee=GDS0215&greythr_id=250
+POST /api/method/greythr_bridge.utils.sync_diagnostics.force_resync_employee?frappe_employee=GDS0216&greythr_id=251
+POST /api/method/greythr_bridge.utils.sync_diagnostics.force_resync_employee?frappe_employee=GDS0228&greythr_id=264
+POST /api/method/greythr_bridge.utils.sync_diagnostics.force_resync_employee?frappe_employee=GDS0282&greythr_id=326
+```
+
+The (greytHR ID → Frappe slot) pairs come from the prior sync-log Name Collision entries — we already know which greytHR record corresponds to each stuck Frappe slot.
+
+After all 4 calls:
+- Each Frappe slot holds the correct (newer-employment) data
+- Each mapping correctly points at the corresponding greytHR ID
+- Next regular sync will:
+  - For greytHR IDs 250/251/264/326: step-1 mapping match → UPDATE → no-op
+  - For greytHR IDs 159/<older 3>: step-1 no match → step-2 email match finds the (now-correct) Frappe slot → v5 sees `emp_no` differ → REFUSE → CREATE new Frappe Employee for the older greytHR ID → SUCCESS
+- Final state: 8 Frappe Employees (4 corrected newer + 4 freshly created older), `records_failed: 0`
+
+### Why this is safer than auto-overwriting in v5
+
+`force_resync_employee` requires HR to explicitly type in BOTH identifiers. There's no automation deciding "should I overwrite this record?" — HR provides ground truth. This protects against the corruption-amplification risk of v4/v5 doing aggressive overwrites (which would have destroyed Sundareshwaran's record back when his slot was misnamed GDS0167).
+
+The endpoint is a recovery tool for HR-confirmed broken mappings, not a sync-time decision.
+
+### Files
+
+- `greythr_bridge/utils/sync_diagnostics.py`:
+  - New `force_resync_employee(frappe_employee, greythr_id)` (~135 lines)
+  - Added `log_error` import for the audit entries
+- `greythr_bridge/tests/test_sync_diagnostics.py` — 8 new tests:
+  - role check (System Manager only)
+  - empty-args validation (both required)
+  - greytHR-API-returns-different-ID safety check
+  - happy path: existing wrong mapping → corrected, fields updated, audit logged
+  - mapping-doesn't-exist path: creates new mapping
+  - missing-Frappe-Employee → clear error
+  - greytHR API failure → structured error, no save
+  - audit log entry written with slot + greytHR ID
+
+### Tests
+
+- **230 passing** (was 222), 3 skipped
+
+### Reusability
+
+This endpoint is the canonical HR repair tool for "mapping is broken AND field values are wrong" cases. Today it fixes 4 records; tomorrow if any new corruption surfaces (from old data migrations, manual edits, etc.), HR has a 1-call path to fix each.
+
+### Zero data deletion
+
+`force_resync_employee` overwrites Frappe Employee field values when HR explicitly asks for it, and updates (never deletes) mapping rows. No Employee record deletion. Memory rule `never_delete_employee_records.md` honoured.

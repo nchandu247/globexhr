@@ -20,6 +20,7 @@ import frappe
 
 from ..api.employee import get_employee
 from ..mappers.employee_mapper import greythr_to_frappe
+from .logging import log_error
 
 
 def _check_admin_role() -> None:
@@ -247,6 +248,209 @@ def inspect_greythr_employee(greythr_id: str) -> dict:
         "extracted_employee_payload": extracted,
         "mapper_output": mapped,
         "mapper_errors": mapper_errors,
+    }
+
+
+@frappe.whitelist()
+def force_resync_employee(frappe_employee: str, greythr_id: str) -> dict:
+    """
+    HR repair tool: force-resync a Frappe Employee from an EXPLICITLY-NAMED
+    greytHR record, bypassing _find_frappe_employee and the defensive
+    matching check. Use ONLY when you've verified that:
+
+      1. The Frappe Employee at `frappe_employee` (the slot) is the right
+         place for greytHR record `greythr_id`'s data, AND
+      2. The existing mapping/fields on that Frappe Employee are wrong
+         (typically because past sync hijacks corrupted them by linking
+         the slot to the wrong greytHR record).
+
+    Example use case (2026-05-25): Frappe slots GDS0215/0216/0228/0282 had
+    their mappings stuck on the OLDER greytHR employment ID for each
+    rehired person, so every sync re-overwrote them with the old
+    employment's data. v5's defensive check correctly REFUSED to keep
+    overwriting but couldn't auto-correct (can't distinguish "fix this
+    corrupted slot" from "leave this different-person slot alone"). HR
+    used this endpoint to point each slot at its correct greytHR ID, after
+    which normal sync re-stabilised.
+
+    Args:
+        frappe_employee: Frappe Employee `name` (the primary key / slot)
+        greythr_id: the CORRECT greytHR `employeeId` for this slot
+
+    What it does:
+        1. Fetches greytHR's data for `greythr_id` (NOT via the existing
+           mapping — uses the explicit ID you provide)
+        2. Runs the mapper on it
+        3. Updates the Frappe Employee's fields to match (overwrite — this
+           is the whole point)
+        4. Updates the mapping row's `greythr_employee_id` and
+           `greythr_employee_no` to match (creates the mapping if absent)
+        5. Logs an audit entry under "greytHR Forced Resync"
+        6. Returns a summary of what changed
+
+    Skips _find_frappe_employee + _is_different_employment ENTIRELY — this
+    is the explicit override. Use sparingly; misuse can re-corrupt records.
+
+    Call (System Manager only):
+        /api/method/greythr_bridge.utils.sync_diagnostics.force_resync_employee
+            ?frappe_employee=GDS0215&greythr_id=250
+    """
+    _check_admin_role()
+
+    if not frappe_employee:
+        return {"error": "frappe_employee is required"}
+    if not greythr_id:
+        return {"error": "greythr_id is required"}
+
+    # ── 1. Verify Frappe Employee exists ──────────────────────────────────────
+    try:
+        employee_doc = frappe.get_doc("Employee", frappe_employee)
+    except frappe.DoesNotExistError:
+        return {
+            "error": f"Frappe Employee '{frappe_employee}' not found. "
+                     f"This endpoint requires an existing slot — it does NOT "
+                     f"create new Employees. Use the regular sync for that."
+        }
+
+    # ── 2. Fetch greytHR data for the EXPLICIT ID (not the mapping's stale one) ─
+    try:
+        raw_response = get_employee(greythr_id)
+    except Exception as exc:
+        return {
+            "frappe_employee": frappe_employee,
+            "greythr_id": greythr_id,
+            "error": f"greytHR API failed: {type(exc).__name__}: {str(exc)[:300]}",
+        }
+
+    extracted = (
+        raw_response.get("data") if isinstance(raw_response, dict) else raw_response
+    )
+    if isinstance(extracted, list) and extracted:
+        extracted = extracted[0]
+    elif not extracted:
+        extracted = raw_response
+
+    mapped = greythr_to_frappe(extracted or {})
+    mapper_errors = mapped.pop("_mapping_errors", [])
+
+    # Sanity check: mapper must have a greytHR ID, and it must match what we
+    # were told. If they disagree, greytHR's `/employees/{id}` endpoint
+    # returned data for a different record — abort.
+    mapped_gid = str(mapped.get("custom_greythr_employee_id") or "")
+    if mapped_gid and mapped_gid != str(greythr_id):
+        return {
+            "error": f"greytHR API returned data for ID {mapped_gid!r} when "
+                     f"we asked for ID {greythr_id!r}. Aborting to avoid "
+                     f"applying mismatched data.",
+            "frappe_employee": frappe_employee,
+            "requested_greythr_id": greythr_id,
+            "returned_greythr_id": mapped_gid,
+        }
+
+    # ── 3. Snapshot what's about to change (for audit + response) ─────────────
+    snapshot_fields = (
+        "employee_number", "first_name", "last_name", "company_email",
+        "personal_email", "status", "date_of_joining", "relieving_date",
+        "custom_greythr_employee_id",
+    )
+    before = {f: employee_doc.get(f) for f in snapshot_fields}
+
+    # ── 4. Apply mapped fields to the Frappe Employee ─────────────────────────
+    try:
+        for field, value in mapped.items():
+            if field.startswith("_"):
+                continue
+            employee_doc.set(field, value)
+        employee_doc.custom_greythr_last_synced = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        employee_doc.flags.ignore_mandatory = True
+        employee_doc.save(ignore_permissions=True)
+    except Exception as exc:
+        try:
+            frappe.db.rollback()
+        except Exception:
+            pass
+        return {
+            "error": f"Failed to save Frappe Employee fields: "
+                     f"{type(exc).__name__}: {str(exc)[:300]}",
+            "traceback": traceback.format_exc()[:2000],
+            "frappe_employee": frappe_employee,
+            "greythr_id": greythr_id,
+        }
+
+    # ── 5. Update (or create) the mapping row to point at the correct ID ──────
+    greythr_no = (extracted or {}).get("employeeNo") or mapped.get("employee_number")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    mapping_action = None
+
+    existing_mapping_rows = frappe.get_all(
+        "greytHR Employee Mapping",
+        filters={"frappe_employee": frappe_employee},
+        fields=["name", "greythr_employee_id", "greythr_employee_no"],
+        limit=1,
+        ignore_permissions=True,
+    )
+    try:
+        if existing_mapping_rows:
+            mapping_doc = frappe.get_doc(
+                "greytHR Employee Mapping", existing_mapping_rows[0]["name"]
+            )
+            mapping_action = (
+                f"corrected (was greythr_employee_id="
+                f"{existing_mapping_rows[0].get('greythr_employee_id')!r}, "
+                f"now {greythr_id!r})"
+            )
+            mapping_doc.greythr_employee_id = greythr_id
+            if greythr_no:
+                mapping_doc.greythr_employee_no = greythr_no
+            mapping_doc.last_synced_at = now
+            mapping_doc.sync_status = "In Sync"
+            mapping_doc.last_sync_error = None
+            mapping_doc.save(ignore_permissions=True)
+        else:
+            mapping_doc = frappe.new_doc("greytHR Employee Mapping")
+            mapping_doc.frappe_employee = frappe_employee
+            mapping_doc.greythr_employee_id = greythr_id
+            mapping_doc.greythr_employee_no = greythr_no
+            mapping_doc.first_synced_at = now
+            mapping_doc.last_synced_at = now
+            mapping_doc.sync_status = "In Sync"
+            mapping_doc.insert(ignore_permissions=True)
+            mapping_action = "created (none existed)"
+        frappe.db.commit()
+    except Exception as exc:
+        try:
+            frappe.db.rollback()
+        except Exception:
+            pass
+        return {
+            "error": f"Frappe Employee fields updated, but mapping update "
+                     f"failed: {type(exc).__name__}: {str(exc)[:300]}. "
+                     f"State is partial — re-run after investigating.",
+            "frappe_employee": frappe_employee,
+            "greythr_id": greythr_id,
+        }
+
+    # ── 6. Audit log ──────────────────────────────────────────────────────────
+    after = {f: employee_doc.get(f) for f in snapshot_fields}
+    changed_fields = {f: {"before": before[f], "after": after[f]}
+                      for f in snapshot_fields if before[f] != after[f]}
+    log_error(
+        f"force_resync_employee: {frappe_employee} → greytHR ID {greythr_id} "
+        f"({greythr_no}). Mapping {mapping_action}. "
+        f"Fields changed: {list(changed_fields.keys()) or 'none'}.",
+        "greytHR Forced Resync",
+    )
+
+    return {
+        "frappe_employee": frappe_employee,
+        "greythr_id": greythr_id,
+        "greythr_employee_no": greythr_no,
+        "mapping_action": mapping_action,
+        "fields_changed": changed_fields,
+        "mapper_errors": mapper_errors,
+        "result": "OK",
     }
 
 
