@@ -292,76 +292,229 @@ def test_active_status_when_no_leaving_date():
     assert result["relieving_date"] is None
 
 
-# ── Bug #1: defensive matching — refuse to hijack records with existing mapping
+# ── _is_different_employment: v4 logic (employee_number + email signals) ─────
 #
-# greytHR rehire scenario (2026-05-25): MOHD BALEEGH AHMED was originally
-# GDS0260 (greytHR ID 300), left, then rejoined as GDS0345 (greytHR ID 389).
-# Old code's email match found GDS0260 and tried to overwrite it with the
-# new employment data — corrupting history. The fix detects this and routes
-# to CREATE so the new greytHR ID gets its own Frappe record.
+# Distinguishes three cases when email/emp_no fallback finds a candidate
+# whose mapping points at a DIFFERENT greytHR ID:
+#   - REHIRE (MOHD BALEEGH: GDS0260 → GDS0345, same email):
+#     employee_numbers DIFFER → refuse, create new record
+#   - DATA CORRUPTION (Sundareshwaran's record at name=GDS0167, greytHR's
+#     GDS0167 is Thenmozhi): employee_numbers MATCH but emails DIFFER →
+#     refuse, fail cleanly so HR repairs
+#   - BROKEN MAPPING (greytHR migrated employeeIds, same person + same
+#     emp_no + same email): all signals match → allow + correct mapping ID
 
-def test_find_frappe_employee_refuses_to_hijack_record_with_different_mapping(patch_frappe):
-    """Email match finds a candidate that's already mapped to a different
-    greytHR ID → return None instead of the candidate."""
+
+def _make_candidate(name, employee_number=None, company_email=None):
+    """Mock a Frappe Employee doc with .name + .get() returning specific fields."""
+    doc = MagicMock()
+    doc.name = name
+    fields = {"employee_number": employee_number, "company_email": company_email}
+    doc.get.side_effect = lambda f, *a, **kw: fields.get(f)
+    return doc
+
+
+def test_find_frappe_employee_refuses_rehire(patch_frappe):
+    """REHIRE: candidate has different employee_number than the new greytHR
+    record → refuse hijack, route to CREATE for new employment."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
-    # Sequence:
-    # 1. mapping lookup for greytHR ID=389 → no match
-    # 2. company_email match → finds GDS0260
-    # 3. candidate-has-different-mapping check → returns existing mapping (ID=300)
+    candidate = _make_candidate(
+        "GDS0260", employee_number="GDS0260", company_email="shared@example.com"
+    )
+    patch_frappe.get_doc.return_value = candidate
     patch_frappe.get_all.side_effect = [
-        [],                                       # step 1: no mapping for ID=389
-        [{"name": "GDS0260"}],                    # step 2: email matches GDS0260
-        [{"greythr_employee_id": "300"}],         # step 3: GDS0260 already maps to ID=300
+        [],                                   # step 1: no mapping for new ID=389
+        [{"name": "GDS0260"}],                # step 2: email match
+        [{"greythr_employee_id": "300"}],     # _is_different_employment: stale mapping
     ]
     result = _find_frappe_employee(
-        {"company_email": "shared@example.com"}, greythr_id="389"
+        {"company_email": "shared@example.com", "employee_number": "GDS0345"},
+        greythr_id="389",
     )
     assert result is None, (
-        "When the candidate is already mapped to a DIFFERENT greytHR ID, "
-        "_find_frappe_employee MUST return None so _sync_one creates a new "
-        "Frappe Employee for the new greytHR record (rehire scenario). "
-        "Reusing the candidate destroys historical employment data."
+        "Same person rehired (different employee_number, same email) MUST "
+        "route to CREATE — preserving the GDS0260 record + creating GDS0345."
+    )
+
+
+def test_find_frappe_employee_refuses_data_corruption(patch_frappe):
+    """DATA CORRUPTION: employee_numbers match but emails differ → DIFFERENT
+    people. Refuse the match (would otherwise overwrite Sundareshwaran with
+    Thenmozhi's data)."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    # Candidate is Sundareshwaran's record currently misnamed GDS0167
+    # (legacy from a past hijacked sync) with HIS email.
+    candidate = _make_candidate(
+        "GDS0167",
+        employee_number="GDS0167",
+        company_email="sundareshwaran@example.com",
+    )
+    patch_frappe.get_doc.return_value = candidate
+    # Incoming greytHR record IS Thenmozhi, also employeeNo GDS0167 but
+    # different email.
+    patch_frappe.get_all.side_effect = [
+        [],                                       # step 1: no mapping for ID=191
+        [],                                       # step 2: company_email won't match (Thenmozhi's email != Sundar's)
+        [],                                       # step 3: personal_email won't match either
+        [{"name": "GDS0167"}],                    # step 4: employee_number GDS0167 finds Sundar's record
+        [{"greythr_employee_id": "<stale>"}],     # _is_different_employment: candidate has stale mapping
+    ]
+    result = _find_frappe_employee(
+        {
+            "company_email": "thenmozhi@example.com",
+            "employee_number": "GDS0167",
+        },
+        greythr_id="191",
+    )
+    assert result is None, (
+        "Email mismatch with same employee_number = DIFFERENT person. "
+        "MUST refuse so we don't overwrite the existing record."
+    )
+
+
+def test_find_frappe_employee_allows_broken_mapping_with_signals_matching(patch_frappe):
+    """BROKEN MAPPING: signals (employee_number + email) all match — same
+    person, just stale mapping ID. Allow match so UPDATE happens and
+    _upsert_mapping corrects the stale greythr_employee_id."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    candidate = _make_candidate(
+        "GDS0215",
+        employee_number="GDS0215",
+        company_email="employee215@example.com",
+    )
+    patch_frappe.get_doc.return_value = candidate
+    patch_frappe.get_all.side_effect = [
+        [],                                       # step 1: no mapping for ID=250
+        [{"name": "GDS0215"}],                    # step 2: email match
+        [{"greythr_employee_id": "<stale>"}],     # _is_different_employment: stale mapping
+    ]
+    result = _find_frappe_employee(
+        {
+            "company_email": "employee215@example.com",
+            "employee_number": "GDS0215",
+        },
+        greythr_id="250",
+    )
+    assert result is candidate, (
+        "All identity signals agree → same person, broken mapping. "
+        "Must return the candidate so UPDATE + _upsert_mapping correction "
+        "fix the stale greythr_employee_id."
     )
 
 
 def test_find_frappe_employee_still_matches_when_no_existing_mapping(patch_frappe):
     """Regression: backfill flow (Frappe Employee manually created without a
-    mapping yet) still gets matched via email — Bug #1 fix shouldn't break it."""
+    mapping yet) still gets matched via email — defensive check must only
+    fire when the candidate has an existing mapping."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
-    candidate_doc = MagicMock()
-    patch_frappe.get_doc.return_value = candidate_doc
+    candidate = _make_candidate(
+        "GDS0500", employee_number="GDS0500", company_email="new@example.com"
+    )
+    patch_frappe.get_doc.return_value = candidate
     patch_frappe.get_all.side_effect = [
         [],                       # step 1: no mapping for ID=500
         [{"name": "GDS0500"}],    # step 2: email match
-        [],                       # step 3: candidate has NO existing mapping
+        [],                       # _is_different_employment: NO existing mapping
     ]
     result = _find_frappe_employee(
-        {"company_email": "new@example.com"}, greythr_id="500"
+        {"company_email": "new@example.com", "employee_number": "GDS0500"},
+        greythr_id="500",
     )
-    assert result is candidate_doc, (
-        "When the email-matched candidate has no existing mapping, sync MUST "
-        "still link it (backfill flow). Bug #1's defensive check must only "
-        "fire when the candidate is already mapped to a DIFFERENT greytHR ID."
-    )
+    assert result is candidate
 
 
 def test_find_frappe_employee_matches_when_existing_mapping_is_same_id(patch_frappe):
-    """Re-sync of the same greytHR record: candidate is matched via email
-    AND already has a mapping to the SAME greytHR ID → still matches.
-    (Edge case where mapping and email both point to the same record.)"""
+    """Re-sync of the same greytHR record: candidate has mapping pointing
+    at the SAME greytHR ID → not a hijack, return the candidate."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
-    candidate_doc = MagicMock()
-    patch_frappe.get_doc.return_value = candidate_doc
+    candidate = _make_candidate(
+        "GDS0500", employee_number="GDS0500", company_email="same@example.com"
+    )
+    patch_frappe.get_doc.return_value = candidate
     patch_frappe.get_all.side_effect = [
-        [],                                       # step 1: deliberately empty to force email fallback
+        [],                                       # step 1: no mapping for ID=500 (forced fallback)
         [{"name": "GDS0500"}],                    # step 2: email match
-        [{"greythr_employee_id": "500"}],         # step 3: mapping is for the SAME greytHR ID
+        [{"greythr_employee_id": "500"}],         # _is_different_employment: SAME ID
     ]
     result = _find_frappe_employee(
-        {"company_email": "same@example.com"}, greythr_id="500"
+        {"company_email": "same@example.com", "employee_number": "GDS0500"},
+        greythr_id="500",
     )
-    assert result is candidate_doc, (
-        "Same greytHR ID → no hijack — must return the candidate."
+    assert result is candidate
+
+
+# ── _upsert_mapping correction of stale greythr_employee_id ───────────────────
+
+def test_upsert_mapping_corrects_stale_greythr_employee_id(patch_frappe):
+    """When existing mapping row's greythr_employee_id differs from what
+    we're now syncing for the same Frappe Employee, update it in place.
+    Without this, allowed broken-mapping matches stay broken forever."""
+    from greythr_bridge.tasks.pull_employees import _upsert_mapping
+    patch_frappe.get_all.return_value = [
+        {"name": "MAP-001", "greythr_employee_id": "<stale-300>"},
+    ]
+    mapping_doc = MagicMock()
+    patch_frappe.get_doc.return_value = mapping_doc
+
+    _upsert_mapping("GDS0215", greythr_id="250", greythr_no="GDS0215")
+
+    assert mapping_doc.greythr_employee_id == "250", (
+        "Stale greythr_employee_id must be corrected to the current value."
+    )
+    assert mapping_doc.greythr_employee_no == "GDS0215"
+    assert mapping_doc.sync_status == "In Sync"
+    assert mapping_doc.save.called
+
+
+def test_upsert_mapping_leaves_correct_greythr_employee_id_unchanged(patch_frappe):
+    """When existing mapping's greythr_employee_id ALREADY matches the
+    sync's value, no correction needed (no spurious log entry, no SQL churn)."""
+    from greythr_bridge.tasks.pull_employees import _upsert_mapping
+    patch_frappe.get_all.return_value = [
+        {"name": "MAP-001", "greythr_employee_id": "250"},
+    ]
+    mapping_doc = MagicMock()
+    patch_frappe.get_doc.return_value = mapping_doc
+
+    _upsert_mapping("GDS0215", greythr_id="250", greythr_no="GDS0215")
+
+    # No "greytHR Mapping Correction" log entry should fire when nothing changed.
+    # (utils.logging.log_error calls frappe.log_error with kwargs, so check
+    # kwargs.title — not args.)
+    log_calls = patch_frappe.log_error.call_args_list
+    correction_calls = [c for c in log_calls
+                        if c.kwargs.get("title") == "greytHR Mapping Correction"]
+    assert not correction_calls, (
+        "Same greythr_employee_id should not log a 'Mapping Correction' entry."
+    )
+
+
+# ── CREATE collision handler (data corruption case) ──────────────────────────
+
+def test_sync_one_create_collision_raises_clear_value_error(patch_frappe):
+    """When CREATE path hits a name collision (IntegrityError 1062), _sync_one
+    must raise a clear ValueError that _pull catches & logs — not bubble up
+    the raw MariaDB error. Also writes a 'greytHR Name Collision' Error Log
+    entry with HR action items."""
+    patch_frappe.get_all.return_value = []  # forces create path
+
+    new_employee = MagicMock()
+    new_employee.insert.side_effect = Exception(
+        "('Employee', 'GDS0167', IntegrityError(1062, "
+        "\"Duplicate entry 'GDS0167' for key 'PRIMARY'\"))"
+    )
+    patch_frappe.new_doc.return_value = new_employee
+
+    with pytest.raises(ValueError, match="name collision"):
+        _sync_one(_emp(overrides={"employeeNo": "GDS0167"}))
+
+    # An Error Log entry under the Name Collision title must have been written.
+    # utils.logging.log_error calls frappe.log_error with kwargs, so check kwargs.
+    log_calls = patch_frappe.log_error.call_args_list
+    collision_logs = [c for c in log_calls
+                      if c.kwargs.get("title") == "greytHR Name Collision"]
+    assert collision_logs, (
+        "Name collision must be logged under 'greytHR Name Collision' for HR triage."
     )
 
 
@@ -372,15 +525,18 @@ def test_find_frappe_employee_step_3_uses_personal_email_not_company_email(patch
     field — a no-op duplicate of step 2 against the wrong target. After fix,
     step 3 only fires if mapped has personal_email."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
-    # No company_email in mapped, has personal_email
-    # Sequence: step 1 (mapping lookup), then step 3 (personal_email), then step 4
-    patch_frappe.get_all.side_effect = [
-        [],                                       # step 1: no mapping
-        [{"name": "GDS0100"}],                    # step 3: personal_email match
-        [],                                       # step 3.5: candidate-has-different-mapping check (no existing mapping)
-    ]
-    candidate_doc = MagicMock()
+    candidate_doc = _make_candidate(
+        "GDS0100", employee_number="GDS0100", company_email=None,
+    )
     patch_frappe.get_doc.return_value = candidate_doc
+    # No company_email in mapped, has personal_email
+    # Sequence: step 1 (mapping lookup), then step 3 (personal_email),
+    # then _is_different_employment (no existing mapping → False)
+    patch_frappe.get_all.side_effect = [
+        [],                       # step 1: no mapping
+        [{"name": "GDS0100"}],    # step 3: personal_email match
+        [],                       # _is_different_employment: no existing mapping
+    ]
     result = _find_frappe_employee(
         {"personal_email": "personal@example.com"}, greythr_id="100"
     )
@@ -391,7 +547,6 @@ def test_find_frappe_employee_step_3_uses_personal_email_not_company_email(patch
         c for c in patch_frappe.get_all.call_args_list
         if c.args and c.args[0] == "Employee"
     ]
-    # Find the call that used the personal_email filter
     personal_email_query = next(
         (c for c in employee_query_calls
          if c.kwargs.get("filters", {}).get("personal_email") == "personal@example.com"),

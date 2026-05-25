@@ -1175,3 +1175,117 @@ The validation error was the safety net catching Bug #1's hijack attempts when `
 ### Zero data deletion
 
 Bug #1 explicitly PREVENTS silent overwrites of historical employment records. Bug #2's `None` assignment only clears stale `relieving_date` values from existing records — it never destroys data unless greytHR's current truth says the relieving date should be empty. All other fixes are pure read-side / diagnostic improvements. Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Matching v4: distinguish broken-mapping from data corruption (2026-05-25)
+
+### What the previous fix (b231807) revealed
+
+The post-deploy sync showed `records_created: 3` (the original rehire victims emp 389/388/271 finally created cleanly — Bug #1 fix worked). But **5 NEW failures** appeared:
+
+```
+191: ('Employee', 'GDS0167', IntegrityError(1062, "Duplicate entry 'GDS0167' for key 'PRIMARY'"))
+250: GDS0215 — same
+251: GDS0216 — same
+264: GDS0228 — same
+326: GDS0282 — same
+```
+
+All "duplicate PRIMARY key" — meaning Bug #1's defensive check correctly refused to hijack these 5 candidates' records, then the CREATE path tried `doc.name = mapped.employee_number` and collided with an existing Frappe Employee at that name.
+
+Investigation showed two distinct underlying causes for the 5 collisions:
+
+#### Case A — 4 broken mappings (GDS0215, GDS0216, GDS0228, GDS0282)
+- Frappe Employee shows the SAME person as greytHR for that employeeNo (verified by user)
+- Frappe Employee's `employee_number` matches the incoming mapper's `employee_number`
+- Frappe Employee's `company_email` matches the incoming mapper's `company_email`
+- Difference is ONLY in the mapping table: stale `greythr_employee_id` from an old greytHR ID
+- **Correct behavior**: allow the match (same person), correct the mapping ID in place
+
+#### Case B — 1 data corruption (GDS0167)
+- Frappe Employee `GDS0167` is actually **Sundareshwaran Selvaraj**, whose real greytHR employeeNo is `GDS0155`
+- greytHR's `GDS0167` is **Thenmozhi Navaneethan** — completely different person
+- Past sync hijack corrupted Sundareshwaran's record: overwrote his `employee_number` from `GDS0155` to `GDS0167` (his email-match collided with Thenmozhi during some earlier sync, UPDATE blindly overwrote)
+- Today's rename script saw the corrupted `employee_number=GDS0167` and renamed his record's primary key accordingly
+- Now greytHR's sync for Thenmozhi (ID=191, employeeNo=GDS0167) finds Sundareshwaran's misnamed record
+- **Correct behavior**: refuse the match (different person), fail with clear HR action item
+
+The previous "refuse if existing mapping ID differs" logic refused both cases identically — Case A unnecessarily, causing the IntegrityError. A smarter signal is needed to distinguish them.
+
+### Fix: matching v4 — require BOTH employee_number AND company_email to match
+
+`_candidate_has_different_mapping` renamed to **`_is_different_employment(candidate_doc, greythr_id, mapped)`** with this logic when an existing mapping points at a different greytHR ID:
+
+```
+if candidate.employee_number == mapped.employee_number
+   AND candidate.company_email == mapped.company_email:
+    → same person, stale mapping ID → allow + correct
+else:
+    → different person OR different employment → refuse
+```
+
+Verification against the 4 known scenarios:
+
+| Scenario | Same emp_no? | Same email? | Decision | Why correct |
+|---|---|---|---|---|
+| Rehire (MOHD BALEEGH GDS0260 → GDS0345) | No | Yes | **Refuse** | Different employments, create new |
+| Broken mapping (GDS0215 et al.) | Yes | Yes | **Allow** | Same person, fix stale mapping ID |
+| Data corruption (GDS0167 Sundareshwaran vs Thenmozhi) | Yes | No | **Refuse** | Different people |
+| Email reassigned (Thenmozhi gets Sundar's old email) | No | Yes | **Refuse** | Different employments |
+
+Requiring BOTH signals is the strongest discriminator that survives both rehire AND corruption edge cases. Comparison is case-insensitive (greytHR returns mixed-case sometimes).
+
+### Companion changes
+
+#### `_upsert_mapping` now corrects stale `greythr_employee_id`
+
+Without this, allowed broken-mapping matches would stay broken forever — every sync would re-trigger the defensive check, fail, log a correction, but the mapping wouldn't actually update. Now when the existing mapping's `greythr_employee_id` differs from what's being synced, we update it in place and log under `"greytHR Mapping Correction"` for HR visibility.
+
+#### CREATE-path collision handler in `_sync_one`
+
+When `doc.insert()` raises a 1062 "Duplicate entry" error (name collision), `_sync_one` catches it, logs a structured `"greytHR Name Collision"` entry with the HR action items (open the existing record, identify which is correct, repair the misnamed one), then raises a clean `ValueError` instead of bubbling up the raw MariaDB stack trace. The error_summary on Sync Log now shows a readable message instead of a noisy IntegrityError repr. Sync continues for the next record — one bad record doesn't poison the batch.
+
+### Files
+
+- `greythr_bridge/tasks/pull_employees.py`:
+  - `_candidate_has_different_mapping` → `_is_different_employment(candidate_doc, greythr_id, mapped)` with v4 logic + extensive docstring explaining the three-case decision matrix
+  - `_find_frappe_employee` call sites — fetch `candidate_doc` (via `get_doc`) BEFORE calling the helper, so we have employee_number + company_email for the signal check
+  - `_upsert_mapping` — correct stale `greythr_employee_id`; updated `frappe.get_all` to include the field + use `ignore_permissions=True`
+  - `_sync_one` CREATE path — try/except wraps `doc.insert()`, detects 1062 IntegrityError, logs Name Collision entry, raises ValueError
+- `greythr_bridge/tests/test_pull_employees.py`:
+  - `_make_candidate(name, employee_number, company_email)` — helper for mocking Frappe Employee docs with .get()
+  - 4 new tests for `_is_different_employment` decision matrix (rehire / corruption / broken-mapping / no-existing-mapping)
+  - 1 new test for SAME-id case (re-sync of same record)
+  - 2 new tests for `_upsert_mapping` correction (stale ID corrected; correct ID untouched)
+  - 1 new test for CREATE collision handler (raises ValueError, logs Name Collision)
+  - Existing test names updated to reflect the v4 logic
+
+### Tests
+
+- **220 passing** (was 215), 3 skipped
+
+### What HR should expect after deploy
+
+Trigger "Sync from greytHR Now":
+
+1. **4 records auto-recover** (GDS0215, GDS0216, GDS0228, GDS0282) — broken mappings allowed + corrected. `records_failed` should drop by 4. New `"greytHR Mapping Correction"` Error Log entries document each correction.
+
+2. **1 record still fails clean** (GDS0167) — the Sundareshwaran/Thenmozhi corruption needs HR repair (rename Sundar's record to `GDS0155`, his real greytHR employeeNo). The new `"greytHR Name Collision"` Error Log entry spells out the action. `records_failed: 1` (was 5).
+
+3. **Existing `records_created: 3` records** (emp 389/388/271 from b231807) stay as-is.
+
+4. WARN entries (mapper warnings from Bug #8) continue to surface in error_summary — informational, no fix needed.
+
+### HR repair workflow for the 1 remaining corruption
+
+1. Confirm in greytHR portal: Sundareshwaran's real employeeNo is `GDS0155`, Thenmozhi's is `GDS0167`
+2. In Frappe: open `/app/employee/GDS0167` (currently Sundareshwaran)
+3. Update his `employee_number` field to `GDS0155` (the real value)
+4. Use the existing `rename_employees_to_greythr_id.run_rename` workflow OR manually rename the doc via Frappe's UI (`/app/employee/GDS0167` → Menu → Rename)
+5. Once Sundareshwaran's record is at name `GDS0155`, the slot `GDS0167` is free
+6. Next sync creates a new Frappe Employee `GDS0167` for Thenmozhi cleanly
+
+### Zero data deletion (still)
+
+The v4 fix is purely about distinguishing same-person from different-person and routing accordingly. No records deleted. Broken mappings are corrected (not deleted). Corruption case fails loudly so HR repairs (not silently overwrites). Memory rule `never_delete_employee_records.md` continues to be honoured.

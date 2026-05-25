@@ -210,44 +210,123 @@ def _sync_one(greythr_emp: dict, warnings: list | None = None) -> str:
         doc.custom_greythr_last_synced = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # ignore_mandatory: gender, date_of_birth not available in greytHR list endpoint
         doc.flags.ignore_mandatory = True
-        doc.insert(ignore_permissions=True)
+        try:
+            doc.insert(ignore_permissions=True)
+        except Exception as exc:
+            # Specifically: 1062 Duplicate entry on PRIMARY (name collision).
+            # Means a different Frappe Employee already exists at `doc.name`.
+            # In healthy data this only happens when past sync hijacks left a
+            # Frappe Employee misnamed (e.g., Sundareshwaran's record currently
+            # at name=GDS0167 because past sync wrote the wrong employee_number).
+            # Don't auto-merge — that would destroy the existing record. Fail
+            # cleanly with a clear HR action item; the rest of the sync continues.
+            err_str = str(exc)
+            is_dup = (
+                "Duplicate entry" in err_str
+                or type(exc).__name__ == "DuplicateEntryError"
+            )
+            if is_dup and emp_no:
+                log_error(
+                    f"pull_employees: greytHR ID={greythr_id} (employeeNo="
+                    f"{emp_no}) could not create Frappe Employee — name "
+                    f"'{emp_no}' is already taken by a different record. "
+                    f"Likely past data corruption (misnamed record from an "
+                    f"earlier hijacked sync). HR action: open /app/employee/"
+                    f"{emp_no} to see who's there; rename or repair that "
+                    f"record so this greytHR ID can create its own Frappe "
+                    f"Employee. Sync continues; this record skipped.",
+                    "greytHR Name Collision",
+                )
+                raise ValueError(
+                    f"name collision: '{emp_no}' already exists as a different "
+                    f"Frappe Employee — HR repair required"
+                )
+            raise  # unrelated error: re-raise as-is
+
         _upsert_mapping(doc.name, greythr_id, greythr_emp.get("employeeNo"))
         return "created"
 
 
-def _candidate_has_different_mapping(candidate_name: str, greythr_id: str) -> bool:
+def _is_different_employment(candidate_doc, greythr_id: str, mapped: dict) -> bool:
     """
-    Return True if this Frappe Employee already has a greytHR Employee Mapping
-    to a *different* greytHR ID than the one we're trying to match.
+    Return True if the candidate Frappe Employee represents a DIFFERENT
+    employment (rehire) or DIFFERENT PERSON (past data corruption) than the
+    greytHR record we're trying to sync — i.e., we must NOT reuse this record.
 
-    Defends against the rehire-hijack bug (2026-05-25): when greytHR creates a
-    new `employeeId` for a re-employed person, the email/employee_number
-    fallback matching in _find_frappe_employee would otherwise reuse the
-    person's existing Frappe Employee (linked to the OLD greytHR ID),
-    overwriting historical employment data. Each greytHR employment should
-    have its own Frappe Employee — silently merging them loses the audit trail
-    of when the person left and rejoined.
+    Decision logic (refined 2026-05-25 after the Sundareshwaran/Thenmozhi
+    corruption case revealed that mapping-ID-only signal is too coarse):
 
-    `ignore_permissions=True` so the Phase 4 `permission_query_conditions`
-    filter on Employee can't accidentally hide a candidate's mapping check.
+      - If candidate has no greytHR mapping yet → safe to reuse (backfill flow).
+      - If candidate's mapping points at the SAME greytHR ID we're syncing →
+        safe (re-sync of the same record).
+      - If candidate's mapping points at a DIFFERENT greytHR ID:
+          - Compare identity signals: `employee_number` AND `company_email`.
+          - If BOTH match (case-insensitive) → same person, mapping is stale
+            (greytHR ID migration etc.) → reuse the record, _upsert_mapping
+            will correct the stale greythr_employee_id.
+          - If EITHER differs → different person OR different employment
+            (rehire). Refuse the match; caller routes to CREATE.
+
+    Why two signals (not one):
+      - employee_number alone misses the data-corruption case where past
+        hijack left Frappe Employee A holding the wrong employee_number that
+        coincidentally equals the new greytHR record's employeeNo
+        (Sundareshwaran's record currently sitting at name=GDS0167 even
+        though greytHR's GDS0167 is Thenmozhi).
+      - email alone misses the rehire case where the same person has
+        consistent email across employments but new employeeNo
+        (MOHD BALEEGH AHMED: GDS0260 → GDS0345, same email throughout).
+      - Requiring BOTH gives a strong "same person" signal that survives
+        both failure modes.
+
+    All `frappe.get_all` calls use `ignore_permissions=True` so the Phase 4
+    UX filter on Employee can't accidentally hide a candidate's mapping check.
     """
     existing = frappe.get_all(
         "greytHR Employee Mapping",
-        filters={"frappe_employee": candidate_name},
+        filters={"frappe_employee": candidate_doc.name},
         fields=["greythr_employee_id"],
         limit=1,
         ignore_permissions=True,
     )
-    if existing and str(existing[0]["greythr_employee_id"]) != str(greythr_id):
+    if not existing:
+        return False  # no existing mapping — backfill flow, safe to reuse
+    existing_gid = str(existing[0]["greythr_employee_id"])
+    if existing_gid == str(greythr_id):
+        return False  # same greytHR ID, not a hijack scenario
+
+    # Existing mapping points at a different greytHR ID. Need identity check.
+    cand_emp_no = (candidate_doc.get("employee_number") or "").strip().lower()
+    cand_email = (candidate_doc.get("company_email") or "").strip().lower()
+    map_emp_no = (mapped.get("employee_number") or "").strip().lower()
+    map_email = (mapped.get("company_email") or "").strip().lower()
+
+    same_person = (
+        cand_emp_no and map_emp_no and cand_emp_no == map_emp_no
+        and cand_email and map_email and cand_email == map_email
+    )
+
+    if same_person:
         log_error(
-            f"pull_employees: greytHR ID={greythr_id} would have hijacked "
-            f"Frappe Employee {candidate_name} (already mapped to greytHR ID="
-            f"{existing[0]['greythr_employee_id']}). Routing to CREATE path "
-            f"so historical record is preserved.",
-            "greytHR Rehire Detection",
+            f"pull_employees: Frappe Employee {candidate_doc.name} has stale "
+            f"mapping (greythr_employee_id={existing_gid}); identity signals "
+            f"match the current greytHR ID={greythr_id} "
+            f"(employee_number + company_email both agree). Allowing the "
+            f"match — _upsert_mapping will correct the stale ID.",
+            "greytHR Mapping Correction",
         )
-        return True
-    return False
+        return False
+
+    log_error(
+        f"pull_employees: greytHR ID={greythr_id} would have hijacked "
+        f"Frappe Employee {candidate_doc.name} (mapped to greytHR ID="
+        f"{existing_gid}). Identity signals disagree: candidate "
+        f"employee_number={cand_emp_no!r} email={cand_email!r}, "
+        f"incoming employee_number={map_emp_no!r} email={map_email!r}. "
+        f"Routing to CREATE so this record is preserved.",
+        "greytHR Rehire Detection",
+    )
+    return True
 
 
 def _find_frappe_employee(mapped: dict, greythr_id: str):
@@ -275,7 +354,7 @@ def _find_frappe_employee(mapped: dict, greythr_id: str):
     if mapping:
         return frappe.get_doc("Employee", mapping[0]["frappe_employee"])
 
-    # 2. company_email — fallback for backfill, but refuse to hijack rehires
+    # 2. company_email — fallback for backfill, but refuse to hijack rehires/corruption
     if email := mapped.get("company_email"):
         matches = frappe.get_all(
             "Employee",
@@ -291,10 +370,10 @@ def _find_frappe_employee(mapped: dict, greythr_id: str):
             )
             return "DUPLICATE"
         if matches:
-            candidate = matches[0]["name"]
-            if _candidate_has_different_mapping(candidate, greythr_id):
-                return None  # caller creates new record for this greytHR ID
-            return frappe.get_doc("Employee", candidate)
+            candidate_doc = frappe.get_doc("Employee", matches[0]["name"])
+            if _is_different_employment(candidate_doc, greythr_id, mapped):
+                return None
+            return candidate_doc
 
     # 3. personal_email — same defense; uses the personal_email value from the
     # mapper (Bug #3 fix 2026-05-25: was previously reading company_email here,
@@ -314,10 +393,10 @@ def _find_frappe_employee(mapped: dict, greythr_id: str):
             )
             return "DUPLICATE"
         if matches:
-            candidate = matches[0]["name"]
-            if _candidate_has_different_mapping(candidate, greythr_id):
+            candidate_doc = frappe.get_doc("Employee", matches[0]["name"])
+            if _is_different_employment(candidate_doc, greythr_id, mapped):
                 return None
-            return frappe.get_doc("Employee", candidate)
+            return candidate_doc
 
     # 4. employee_number — same defense
     if emp_no := mapped.get("employee_number"):
@@ -329,25 +408,47 @@ def _find_frappe_employee(mapped: dict, greythr_id: str):
             ignore_permissions=True,
         )
         if matches:
-            candidate = matches[0]["name"]
-            if _candidate_has_different_mapping(candidate, greythr_id):
+            candidate_doc = frappe.get_doc("Employee", matches[0]["name"])
+            if _is_different_employment(candidate_doc, greythr_id, mapped):
                 return None
-            return frappe.get_doc("Employee", candidate)
+            return candidate_doc
 
     return None
 
 
 def _upsert_mapping(frappe_employee: str, greythr_id: str, greythr_no: str = None) -> None:
-    """Create or update the greytHR Employee Mapping record."""
+    """
+    Create or update the greytHR Employee Mapping record.
+
+    Refined 2026-05-25 (rehire/broken-mapping sweep): when an existing mapping
+    row's `greythr_employee_id` differs from what we're now syncing for the
+    same Frappe Employee, CORRECT IT in place. This covers the broken-mapping
+    case where greytHR's internal employeeId changed but the person is the
+    same (signals already verified by `_is_different_employment` upstream).
+    Without this correction, the stale ID persists forever and every sync
+    would re-trigger the rehire-detection logic for the same record.
+    """
     existing = frappe.get_all(
         "greytHR Employee Mapping",
         filters={"frappe_employee": frappe_employee},
+        fields=["name", "greythr_employee_id"],
         limit=1,
+        ignore_permissions=True,
     )
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if existing:
         doc = frappe.get_doc("greytHR Employee Mapping", existing[0]["name"])
+        old_gid = str(existing[0].get("greythr_employee_id") or "")
+        if old_gid != str(greythr_id):
+            log_error(
+                f"pull_employees: correcting stale mapping for {frappe_employee}: "
+                f"greythr_employee_id {old_gid!r} → {greythr_id!r}",
+                "greytHR Mapping Correction",
+            )
+            doc.greythr_employee_id = greythr_id
+        if greythr_no:
+            doc.greythr_employee_no = greythr_no
         doc.last_synced_at = now
         doc.sync_status = "In Sync"
         doc.last_sync_error = None
