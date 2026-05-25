@@ -208,6 +208,14 @@ def _sync_one(greythr_emp: dict, warnings: list | None = None) -> str:
             doc.set(field, value)
 
         doc.custom_greythr_last_synced = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Auto-assign default holiday_list so Frappe HR's mandatory check
+        # on Employee Separation can pass without manual setup. greytHR
+        # handles real leave/attendance, so this is a Frappe-HR formality.
+        # See tasks/setup_letter_placeholders.py for the placeholder design.
+        # Defense-in-depth with hooks_handlers.employee.set_name_from_greythr_id.
+        if not doc.get("holiday_list"):
+            if frappe.db.exists("Holiday List", "Calendar-Only (No Holidays)"):
+                doc.holiday_list = "Calendar-Only (No Holidays)"
         # ignore_mandatory: gender, date_of_birth not available in greytHR list endpoint
         doc.flags.ignore_mandatory = True
         try:

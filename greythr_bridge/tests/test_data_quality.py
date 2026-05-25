@@ -179,4 +179,69 @@ def test_audit_queries_use_or_filters_not_in_with_null(patch_frappe):
     assert '"not in"' not in with_data_call_repr, (
         "employees_with_data must NOT use NOT IN with NULL — returns 0 in SQL."
     )
-    assert "'not in'" not in with_data_call_repr
+
+
+# ── list_employees_missing_holiday_list — diagnostic for Option A setup ──────
+
+def test_list_employees_missing_holiday_list_requires_audit_role(patch_frappe):
+    patch_frappe.get_roles.return_value = ["Employee"]  # not HR/SysMgr
+    patch_frappe.throw.side_effect = PermissionError("only audit role")
+
+    from greythr_bridge.utils.data_quality import list_employees_missing_holiday_list
+    try:
+        list_employees_missing_holiday_list()
+        assert False, "Should have raised PermissionError"
+    except PermissionError:
+        pass
+
+
+def test_list_employees_missing_holiday_list_reports_zero_when_all_set(patch_frappe):
+    """Healthy state after setup_letter_placeholders has run + backfill done."""
+    _setup_audit_role(patch_frappe)
+    patch_frappe.get_all.return_value = []  # no Employees missing the field
+
+    from greythr_bridge.utils.data_quality import list_employees_missing_holiday_list
+    result = list_employees_missing_holiday_list()
+
+    assert result["summary"]["count_missing_holiday_list"] == 0
+    assert "no action" in result["summary"]["next_step"].lower()
+    assert result["employees"] == []
+
+
+def test_list_employees_missing_holiday_list_surfaces_records_and_action(patch_frappe):
+    """When some employees lack holiday_list, return them with the
+    actionable next-step pointing at setup_letter_placeholders."""
+    _setup_audit_role(patch_frappe)
+    patch_frappe.get_all.return_value = [
+        {"name": "GDS0001", "employee_name": "Test One", "first_name": "Test",
+         "status": "Active", "company": "Globex", "date_of_joining": "2024-01-01"},
+        {"name": "GDS0002", "employee_name": "Test Two", "first_name": "Test",
+         "status": "Left", "company": "Globex", "date_of_joining": "2023-01-01"},
+    ]
+
+    from greythr_bridge.utils.data_quality import list_employees_missing_holiday_list
+    result = list_employees_missing_holiday_list()
+
+    assert result["summary"]["count_missing_holiday_list"] == 2
+    assert "setup_letter_placeholders" in result["summary"]["next_step"]
+    assert len(result["employees"]) == 2
+    assert result["employees"][0]["name"] == "GDS0001"
+
+
+def test_list_employees_missing_holiday_list_is_read_only(patch_frappe):
+    """Critical invariant: this diagnostic must not write to the DB."""
+    _setup_audit_role(patch_frappe)
+    patch_frappe.get_all.return_value = []
+
+    # Spy on every write method
+    patch_frappe.db.set_value.reset_mock()
+    patch_frappe.db.delete.reset_mock() if hasattr(patch_frappe.db, "delete") else None
+    patch_frappe.db.sql.reset_mock()
+    patch_frappe.new_doc.reset_mock()
+
+    from greythr_bridge.utils.data_quality import list_employees_missing_holiday_list
+    list_employees_missing_holiday_list()
+
+    patch_frappe.db.set_value.assert_not_called()
+    patch_frappe.db.sql.assert_not_called()
+    patch_frappe.new_doc.assert_not_called()

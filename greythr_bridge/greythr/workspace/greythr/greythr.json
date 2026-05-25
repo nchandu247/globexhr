@@ -38,7 +38,7 @@
    "link_to": "Salary Structure Assignment",
    "label": "New Salary Revision",
    "color": "Green",
-   "url": "/app/salary-structure-assignment/new?custom_send_increment_letter=1"
+   "url": "/app/salary-structure-assignment/new?custom_send_increment_letter=1&salary_structure=Letter%20Trigger%20Structure"
   },
   {
    "type": "DocType",

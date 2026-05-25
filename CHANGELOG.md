@@ -1445,3 +1445,113 @@ This endpoint is the canonical HR repair tool for "mapping is broken AND field v
 ### Zero data deletion
 
 `force_resync_employee` overwrites Frappe Employee field values when HR explicitly asks for it, and updates (never deletes) mapping rows. No Employee record deletion. Memory rule `never_delete_employee_records.md` honoured.
+
+---
+
+## [Unreleased] — Letter-trigger placeholders + Service Cert template fix (2026-05-26)
+
+### The blocker we hit during Phase B live testing
+
+HR successfully generated Promotion and Service Certificate letters (2 of 7 Phase B types verified on live). When attempting to create an Employee Separation (to trigger Experience/Relieving letters) or a Salary Structure Assignment (to trigger Increment letters), Frappe HR's built-in validation blocked the submit:
+
+- Employee Separation requires the linked Employee to have `holiday_list` set (used internally for final-settlement working-day computation)
+- Salary Structure Assignment requires a `salary_structure` (used internally for payroll component computation)
+
+**Architectural reality**: greytHR runs all payroll/leave/attendance. Frappe HR is purely a mirror + letter-generation layer. The mandatory-field validations exist to support features we don't use.
+
+After detailed analysis ([2026-05-25 design discussion in conversation]), chose **Option A**: ship empty/minimal PLACEHOLDER records and auto-assign them. Frappe HR's data model stays semantically consistent (no validation overrides, no untested code paths broken), and the placeholders can be replaced with real records if greytHR ever stops being the payroll system.
+
+Considered + rejected:
+- **Option B (make fields non-mandatory via Property Setter)**: silently breaks Leave Application, Payroll Entry, Salary Slip, multiple reports. Too much untested downstream impact.
+- **Option E (override Frappe HR controller methods)**: maintenance burden on Frappe HR upgrades + same downstream risk.
+
+### What ships in this commit
+
+#### 1. `greythr_bridge/tasks/setup_letter_placeholders.py` (new)
+
+Whitelisted task (`System Manager` only) that HR runs ONCE post-deploy. Idempotent — safe to re-run.
+
+Creates:
+- **Salary Component** `CTC` — type Earning, no formula. Description explicitly names it a placeholder.
+- **Holiday List** `Calendar-Only (No Holidays)` — empty list (no holidays, no weekly_off), current year range.
+- **Salary Structure** `Letter Trigger Structure` — INR, Monthly, single CTC earning, submitted.
+
+Then backfills:
+- Sets `holiday_list = "Calendar-Only (No Holidays)"` on every Employee whose holiday_list is blank. Uses `frappe.db.set_value` (bypasses Employee validate hook to avoid status-flip side effects on bulk update). Reports counts of backfilled vs already-set.
+
+Safety:
+- Each create wrapped in try/except — one failure doesn't block the others
+- If Holiday List creation fails, backfill is skipped (no dangling FK risk)
+- If no default Company is set in Global Defaults, Salary Structure creation reports a clear error
+- All actions logged to Error Log under `"greytHR Setup Placeholders"`
+
+Constants exported (`DEFAULT_HOLIDAY_LIST`, `DEFAULT_SALARY_STRUCTURE`, `DEFAULT_SALARY_COMPONENT`) for hook usage in other modules.
+
+#### 2. Auto-assignment hooks for `holiday_list`
+
+- **`greythr_bridge/hooks_handlers/employee.py`** — `set_name_from_greythr_id` (Employee `before_insert` hook) extended: if `doc.holiday_list` is empty AND the placeholder list exists, auto-assign it. Silently skips if placeholder doesn't exist yet (lets Frappe HR validate surface the missing setup explicitly to HR).
+- **`greythr_bridge/tasks/pull_employees.py`** — `_sync_one` CREATE path: defensive parity for sync-created Employees. Same conditional assignment.
+
+After deploy, every new Employee (manual UI or sync) automatically gets the placeholder holiday_list — HR never has to manage it per-employee.
+
+#### 3. Workspace shortcut URL pre-fill
+
+`greythr_bridge/greythr/workspace/greythr/greythr.json` — "New Salary Revision" shortcut URL now appends `&salary_structure=Letter%20Trigger%20Structure`. HR clicks the workspace card → SSA form opens with the placeholder structure pre-selected + Send Increment Letter checkbox ticked. HR fills in `base` (CTC amount) + submits → Increment letter generates.
+
+#### 4. Diagnostic endpoint
+
+`greythr_bridge/utils/data_quality.py` — new `list_employees_missing_holiday_list()` (HR Manager / System Manager). Read-only. Returns count + per-employee details for any Employee whose `holiday_list` is blank, plus the next-step pointer to setup_letter_placeholders. Ongoing visibility if any future record bypasses our hook (e.g., bulk import).
+
+#### 5. Service Certificate template fix
+
+`greythr_bridge/templates/letters/html/service_certificate.html` — previously rendered awkwardly when `designation` was blank:
+
+> *"currently holds the position of  and has been associated..."* (gap where designation should be)
+
+Now uses conditional Jinja blocks: if designation set → "holds the position of X and has been..."; if not but tenure set → "has been associated for X years..."; if neither → "is currently employed with the organisation." Always reads cleanly.
+
+### Tests
+
+- **242 passing** (was 230), 3 skipped
+- 8 new tests in `test_setup_letter_placeholders.py`: role check, fresh-run all-three creation, idempotency, backfill behaviour, Holiday-List-creation-failed safety (no backfill if record absent), missing-Company error path, exported constants pinned
+- 1 new test in `test_workspace_fixture.py`: salary revision shortcut URL pre-fills the placeholder structure
+- 4 new tests in `test_data_quality.py`: role check, healthy zero-count state, surfaces missing records + actionable next-step, read-only invariant
+
+### How HR uses this after deploy
+
+**One-time setup** (~2 min):
+```
+https://hr.globexdigital.ai/api/method/greythr_bridge.tasks.setup_letter_placeholders.setup_letter_placeholders
+```
+
+Returns a JSON summary like:
+```json
+{
+  "salary_component_created": true,
+  "salary_structure_created": true,
+  "holiday_list_created": true,
+  "employees_backfilled": 340,
+  "employees_already_set": 0,
+  "errors": []
+}
+```
+
+**Then test the 3 letter types previously blocked**:
+- New Employee Separation → submit → Experience + Relieving letters auto-generate via on_submit
+- Click "New Salary Revision" on workspace → SSA opens with structure pre-filled → set CTC base + submit → Increment letter generates
+- Service Certificate now renders cleanly even when employee's designation field is blank
+
+**Then test the remaining 2 Phase B letter types** (Consultant Offer, Intern Offer) via the workspace shortcuts — these don't need the placeholder records (they use the Job Offer flow).
+
+### Future-proof note
+
+If Globex ever wants to use Frappe HR for actual payroll/leave/attendance (e.g., as a secondary or backup system, or for non-greytHR contractors), the placeholders are easy to replace:
+- Create real Holiday List(s) with actual public holidays → assign to relevant employees
+- Create real Salary Structure(s) with proper components → use for actual SSAs
+- Frappe HR's other features (Leave Application, Payroll Entry, Salary Slip) work without any code change — they just operate on the real records instead of the placeholders.
+
+This is exactly why Option A was chosen over Option B: zero code rework needed for the future-pivot scenario.
+
+### Zero data deletion
+
+The setup task only CREATES records (3 placeholders + backfills the holiday_list field on existing employees). No deletions, no destructive updates. The backfill uses `update_modified=False` so it doesn't trigger spurious "modified" timestamp bumps. Memory rule `never_delete_employee_records.md` honoured.

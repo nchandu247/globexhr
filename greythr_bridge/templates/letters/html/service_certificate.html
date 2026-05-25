@@ -19,10 +19,14 @@
   </p>
 
   <p>
-    {{ employee_name }} currently holds the position of
+    {% if designation %}{{ employee_name }} currently holds the position of
     <strong>{{ designation }}</strong>
-    {% if tenure_so_far %} and has been associated with the company for
+    {% if tenure_so_far %}and has been associated with the company for
     <strong>{{ tenure_so_far }}</strong>{% endif %}.
+    {% elif tenure_so_far %}{{ employee_name }} has been associated with the
+    company for <strong>{{ tenure_so_far }}</strong>.
+    {% else %}{{ employee_name }} is currently employed with the organisation.
+    {% endif %}
   </p>
 
   <p>

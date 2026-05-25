@@ -106,6 +106,28 @@ class TestWorkspaceDefinition(unittest.TestCase):
                       "Shortcut url must include manual_sync=1 so the "
                       "Client Script auto-opens the confirm dialog.")
 
+    def test_salary_revision_shortcut_prefills_letter_trigger_structure(self):
+        """The 'New Salary Revision' shortcut must pre-fill the placeholder
+        Salary Structure ('Letter Trigger Structure') so HR doesn't have
+        to remember it. Frappe HR's SSA validation requires the field;
+        we satisfy it with the placeholder created by
+        setup_letter_placeholders."""
+        ws = _load_workspace()
+        rev_shortcut = next(
+            (s for s in ws["shortcuts"] if s["label"] == "New Salary Revision"),
+            None,
+        )
+        self.assertIsNotNone(rev_shortcut)
+        self.assertIn(
+            "salary_structure=Letter%20Trigger%20Structure",
+            rev_shortcut["url"],
+            "Shortcut url must pre-fill the Letter Trigger Structure "
+            "placeholder so HR isn't blocked by Frappe HR's mandatory "
+            "salary_structure field. URL-encoded with %20 for the spaces."
+        )
+        # Also still has the increment letter trigger flag
+        self.assertIn("custom_send_increment_letter=1", rev_shortcut["url"])
+
     def test_every_shortcut_has_label_and_url(self):
         ws = _load_workspace()
         for i, sc in enumerate(ws["shortcuts"]):

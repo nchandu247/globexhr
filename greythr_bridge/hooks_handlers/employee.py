@@ -1,7 +1,7 @@
 """
 Handlers for the Employee doctype.
 
-Two responsibilities:
+Three responsibilities:
 
 1. Manual-trigger letter generation (Promotion, Service Certificate) — these
    are whitelisted methods invoked from Client Scripts (buttons) on the
@@ -12,6 +12,13 @@ Two responsibilities:
    (wired in hooks.py). When `employee_number` is set, uses it as the Frappe
    primary key so HR sees matching IDs across both systems. Otherwise falls
    back to Frappe HR's default naming series (HR-EMP-####).
+
+3. Holiday list default (`assign_default_holiday_list`) — same `before_insert`
+   hook. Satisfies Frappe HR's mandatory holiday_list requirement so
+   Employee Separation can be created without setup friction. Set to the
+   "Calendar-Only (No Holidays)" placeholder created by setup_letter_placeholders;
+   greytHR runs the actual leave/attendance computation, so the holiday list
+   here is a formality.
 """
 from datetime import date
 import frappe
@@ -21,31 +28,47 @@ from ..letters.merger import (
     build_service_certificate_context,
 )
 from ..letters.non_signing import generate_and_deliver
+from ..tasks.setup_letter_placeholders import DEFAULT_HOLIDAY_LIST
 from ..utils.logging import log_error
 
 
-# ── Naming hook ────────────────────────────────────────────────────────────────
+# ── before_insert hook ─────────────────────────────────────────────────────────
 
 def set_name_from_greythr_id(doc, method=None):
     """
-    Use greytHR's employee_number as the Frappe Employee primary key (name).
+    Two-in-one Employee `before_insert` hook:
 
-    Fires on Employee.before_insert (registered in hooks.py). Idempotent:
-    only sets `doc.name` if employee_number is populated AND name is not
-    already set. Falls through to Frappe HR's default naming series
-    (HR-EMP-####) when employee_number is empty — preserves HR's ability to
-    manually create Employee records before a greytHR ID is assigned.
+    A) Use greytHR's employee_number as the Frappe Employee primary key (name).
+       Idempotent: only sets `doc.name` if employee_number is populated AND
+       name is not already set. Falls through to Frappe HR's default naming
+       series (HR-EMP-####) when employee_number is empty — preserves HR's
+       ability to manually create Employee records before a greytHR ID is
+       assigned.
 
-    Defense-in-depth: tasks/pull_employees.py also sets doc.name explicitly
-    for sync-created records. This hook covers manual UI creates + any other
-    code path.
+       Defense-in-depth: tasks/pull_employees.py also sets doc.name explicitly
+       for sync-created records.
+
+    B) Auto-assign the default Holiday List if blank. Frappe HR requires
+       holiday_list to be set before an Employee Separation can be created.
+       greytHR handles actual leave/attendance, so this is a Frappe-HR
+       formality. The placeholder list ("Calendar-Only (No Holidays)") is
+       created by the setup_letter_placeholders task — we only assign if
+       it exists, so a fresh environment doesn't crash with FK error.
     """
+    # (A) Naming
     if doc.employee_number and not doc.name:
         doc.name = doc.employee_number
         # Tell Frappe naming logic to skip autoname (defensive — set_new_name
         # in Frappe also checks `if not doc.name`, but flags.name_set is
         # the explicit "I know what I'm doing" signal).
         doc.flags.name_set = True
+
+    # (B) Default holiday_list (Frappe HR mandatory)
+    if not doc.holiday_list:
+        if frappe.db.exists("Holiday List", DEFAULT_HOLIDAY_LIST):
+            doc.holiday_list = DEFAULT_HOLIDAY_LIST
+        # else: silently skip — HR hasn't run setup_letter_placeholders yet.
+        # Frappe HR's validate will surface the missing setup explicitly.
 
 
 def _check_hr_role():

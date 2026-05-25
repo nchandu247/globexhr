@@ -118,3 +118,46 @@ def list_ghost_employees() -> dict:
         "mapped_clean": mapped_clean,
         "frappe_only": frappe_only,
     }
+
+
+@frappe.whitelist()
+def list_employees_missing_holiday_list() -> dict:
+    """
+    Read-only audit — surface Employees whose `holiday_list` field is blank.
+
+    Why this matters: Frappe HR requires `holiday_list` on every Employee
+    before an Employee Separation can be created (validate hook). The
+    setup_letter_placeholders task backfills all existing employees + the
+    before_insert hook auto-assigns the default on new ones — so a non-zero
+    count here means either:
+      - setup_letter_placeholders hasn't been run yet, OR
+      - An Employee was created via a code path that bypassed our hook
+        (rare — possible if HR uses an import / bulk update tool)
+
+    Returns counts + per-employee details. Restricted to HR / System Manager.
+
+    Call:
+      /api/method/greythr_bridge.utils.data_quality.list_employees_missing_holiday_list
+    """
+    _check_audit_role()
+
+    missing = frappe.get_all(
+        "Employee",
+        filters=[["holiday_list", "is", "not set"]],
+        fields=["name", "employee_name", "first_name", "status",
+                "company", "date_of_joining"],
+        ignore_permissions=True,
+        limit_page_length=0,
+    )
+    return {
+        "summary": {
+            "count_missing_holiday_list": len(missing),
+            "next_step": (
+                "Run setup_letter_placeholders to create the default Holiday "
+                "List + backfill missing assignments. URL: /api/method/"
+                "greythr_bridge.tasks.setup_letter_placeholders."
+                "setup_letter_placeholders"
+            ) if missing else "All Employees have a holiday_list — no action needed.",
+        },
+        "employees": missing,
+    }
