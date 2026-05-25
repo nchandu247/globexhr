@@ -286,8 +286,9 @@ def test_relieving_before_joining_drops_relieving_keeps_active():
 
     # date_of_joining preserved — it's valid on its own
     assert result["date_of_joining"] == "2017-11-12"
-    # relieving_date dropped — would violate Frappe HR validation
-    assert "relieving_date" not in result
+    # relieving_date explicitly cleared (Bug #2 2026-05-25: was previously
+    # popped; now set to None so _sync_one clears any stale value on update)
+    assert result["relieving_date"] is None
     # status forced back to Active (NOT Left) so Frappe HR's relieving_date
     # validation doesn't block the save
     assert result["status"] == "Active"
@@ -350,9 +351,8 @@ def test_relieving_set_but_no_date_of_joining_drops_relieving():
     }
     result = greythr_to_frappe(payload)
 
-    # relieving_date dropped — would violate Frappe HR validation (Left
-    # needs both date_of_joining AND relieving_date set)
-    assert "relieving_date" not in result
+    # relieving_date explicitly cleared (Bug #2 2026-05-25)
+    assert result["relieving_date"] is None
     # status forced back to Active so the record can be saved at all
     assert result["status"] == "Active"
     # date_of_joining stays absent — mapper can't make data up
@@ -380,7 +380,8 @@ def test_relieving_with_unparseable_joining_date_drops_relieving():
     }
     result = greythr_to_frappe(payload)
 
-    assert "relieving_date" not in result
+    # Bug #2 fix: relieving_date now an explicit None (not absent)
+    assert result["relieving_date"] is None
     assert "date_of_joining" not in result
     assert result["status"] == "Active"
     # Both the parse error AND the sanity-check error should be present

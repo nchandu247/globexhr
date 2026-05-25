@@ -329,8 +329,9 @@ def test_inspect_greythr_employee_surfaces_sanity_check_for_bad_data(patch_frapp
     with patch.object(sync_diagnostics, "get_employee", return_value=bad_payload):
         result = sync_diagnostics.inspect_greythr_employee("389")
 
-    # Mapper applied the sanity check
-    assert "relieving_date" not in result["mapper_output"]
+    # Mapper applied the sanity check (Bug #2 2026-05-25: relieving_date is
+    # now explicit None, not absent — see employee_mapper.py status block)
+    assert result["mapper_output"]["relieving_date"] is None
     assert result["mapper_output"]["status"] == "Active"
     # And surfaced the reason so HR knows what to fix in greytHR
     assert any("missing" in e and "389" in str(e) for e in result["mapper_errors"])

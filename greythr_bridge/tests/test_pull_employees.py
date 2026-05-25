@@ -287,4 +287,184 @@ def test_left_status_inferred_from_leaving_date_on_list():
 def test_active_status_when_no_leaving_date():
     result = greythr_to_frappe(_emp())
     assert result["status"] == "Active"
-    assert "relieving_date" not in result
+    # Bug #2 fix (2026-05-25): mapper now emits explicit None instead of
+    # absence, so _sync_one clears any stale relieving_date on rehires.
+    assert result["relieving_date"] is None
+
+
+# ── Bug #1: defensive matching — refuse to hijack records with existing mapping
+#
+# greytHR rehire scenario (2026-05-25): MOHD BALEEGH AHMED was originally
+# GDS0260 (greytHR ID 300), left, then rejoined as GDS0345 (greytHR ID 389).
+# Old code's email match found GDS0260 and tried to overwrite it with the
+# new employment data — corrupting history. The fix detects this and routes
+# to CREATE so the new greytHR ID gets its own Frappe record.
+
+def test_find_frappe_employee_refuses_to_hijack_record_with_different_mapping(patch_frappe):
+    """Email match finds a candidate that's already mapped to a different
+    greytHR ID → return None instead of the candidate."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    # Sequence:
+    # 1. mapping lookup for greytHR ID=389 → no match
+    # 2. company_email match → finds GDS0260
+    # 3. candidate-has-different-mapping check → returns existing mapping (ID=300)
+    patch_frappe.get_all.side_effect = [
+        [],                                       # step 1: no mapping for ID=389
+        [{"name": "GDS0260"}],                    # step 2: email matches GDS0260
+        [{"greythr_employee_id": "300"}],         # step 3: GDS0260 already maps to ID=300
+    ]
+    result = _find_frappe_employee(
+        {"company_email": "shared@example.com"}, greythr_id="389"
+    )
+    assert result is None, (
+        "When the candidate is already mapped to a DIFFERENT greytHR ID, "
+        "_find_frappe_employee MUST return None so _sync_one creates a new "
+        "Frappe Employee for the new greytHR record (rehire scenario). "
+        "Reusing the candidate destroys historical employment data."
+    )
+
+
+def test_find_frappe_employee_still_matches_when_no_existing_mapping(patch_frappe):
+    """Regression: backfill flow (Frappe Employee manually created without a
+    mapping yet) still gets matched via email — Bug #1 fix shouldn't break it."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    candidate_doc = MagicMock()
+    patch_frappe.get_doc.return_value = candidate_doc
+    patch_frappe.get_all.side_effect = [
+        [],                       # step 1: no mapping for ID=500
+        [{"name": "GDS0500"}],    # step 2: email match
+        [],                       # step 3: candidate has NO existing mapping
+    ]
+    result = _find_frappe_employee(
+        {"company_email": "new@example.com"}, greythr_id="500"
+    )
+    assert result is candidate_doc, (
+        "When the email-matched candidate has no existing mapping, sync MUST "
+        "still link it (backfill flow). Bug #1's defensive check must only "
+        "fire when the candidate is already mapped to a DIFFERENT greytHR ID."
+    )
+
+
+def test_find_frappe_employee_matches_when_existing_mapping_is_same_id(patch_frappe):
+    """Re-sync of the same greytHR record: candidate is matched via email
+    AND already has a mapping to the SAME greytHR ID → still matches.
+    (Edge case where mapping and email both point to the same record.)"""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    candidate_doc = MagicMock()
+    patch_frappe.get_doc.return_value = candidate_doc
+    patch_frappe.get_all.side_effect = [
+        [],                                       # step 1: deliberately empty to force email fallback
+        [{"name": "GDS0500"}],                    # step 2: email match
+        [{"greythr_employee_id": "500"}],         # step 3: mapping is for the SAME greytHR ID
+    ]
+    result = _find_frappe_employee(
+        {"company_email": "same@example.com"}, greythr_id="500"
+    )
+    assert result is candidate_doc, (
+        "Same greytHR ID → no hijack — must return the candidate."
+    )
+
+
+# ── Bug #3: step 3 uses personal_email correctly ──────────────────────────────
+
+def test_find_frappe_employee_step_3_uses_personal_email_not_company_email(patch_frappe):
+    """Pre-fix, step 3 read mapped['company_email'] and queried personal_email
+    field — a no-op duplicate of step 2 against the wrong target. After fix,
+    step 3 only fires if mapped has personal_email."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    # No company_email in mapped, has personal_email
+    # Sequence: step 1 (mapping lookup), then step 3 (personal_email), then step 4
+    patch_frappe.get_all.side_effect = [
+        [],                                       # step 1: no mapping
+        [{"name": "GDS0100"}],                    # step 3: personal_email match
+        [],                                       # step 3.5: candidate-has-different-mapping check (no existing mapping)
+    ]
+    candidate_doc = MagicMock()
+    patch_frappe.get_doc.return_value = candidate_doc
+    result = _find_frappe_employee(
+        {"personal_email": "personal@example.com"}, greythr_id="100"
+    )
+    assert result is candidate_doc
+    # Step 3's call args should target the personal_email field with the
+    # personal_email value (not company_email)
+    employee_query_calls = [
+        c for c in patch_frappe.get_all.call_args_list
+        if c.args and c.args[0] == "Employee"
+    ]
+    # Find the call that used the personal_email filter
+    personal_email_query = next(
+        (c for c in employee_query_calls
+         if c.kwargs.get("filters", {}).get("personal_email") == "personal@example.com"),
+        None,
+    )
+    assert personal_email_query is not None, (
+        "Step 3 of the matching chain must query Employee.personal_email "
+        "filtered by mapped['personal_email'] (Bug #3 fix 2026-05-25)."
+    )
+
+
+# ── Bug #6: ignore_permissions=True on internal sync lookups ─────────────────
+
+def test_find_frappe_employee_uses_ignore_permissions_on_employee_lookups(patch_frappe):
+    """Phase 4 added a permission_query_conditions filter on Employee that
+    hides invalid-pattern records from autocompletes. That filter must NOT
+    apply to internal sync lookups, or sync would silently miss matches for
+    hidden records and create duplicates."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    # All match paths empty → triggers every get_all call in the chain
+    # (1 mapping lookup + 1 each for company_email / personal_email / employee_number)
+    patch_frappe.get_all.return_value = []
+    _find_frappe_employee(
+        {
+            "company_email": "x@example.com",
+            "personal_email": "y@example.com",
+            "employee_number": "GDS0001",
+        },
+        greythr_id="42",
+    )
+    # Every Employee query must have ignore_permissions=True
+    employee_calls = [
+        c for c in patch_frappe.get_all.call_args_list
+        if c.args and c.args[0] == "Employee"
+    ]
+    assert employee_calls, "Expected at least one Employee lookup"
+    for c in employee_calls:
+        assert c.kwargs.get("ignore_permissions") is True, (
+            f"Employee lookup missing ignore_permissions=True: {c}. "
+            f"Without it, Phase 4's permission filter silently hides "
+            f"candidates from sync matching."
+        )
+
+
+# ── Bug #8: mapper warnings surfaced into Sync Log error_summary ──────────────
+
+def test_sync_one_appends_mapper_warnings_when_warnings_list_provided(patch_frappe):
+    """When the optional `warnings` list is passed, _sync_one appends each
+    per-record mapping_error with an `employeeId:` prefix so the caller can
+    surface them in the Sync Log's error_summary."""
+    patch_frappe.get_all.return_value = []  # forces create path
+    warnings = []
+
+    payload = {
+        "employeeId": 42,
+        "name": "Test Person",
+        "employeeNo": "GDS0042",
+        "leftorg": True,  # but no leavingDate → mapper warns
+        "dateOfJoin": "2024-01-01",
+    }
+    _sync_one(payload, warnings=warnings)
+
+    assert warnings, "warnings list must have been populated"
+    # Every entry must have the employeeId prefix for HR triage
+    assert all(w.startswith("42:") for w in warnings)
+    # The specific mapper warning we know fires for this payload
+    assert any("leftorg" in w and "leavingDate" in w for w in warnings)
+
+
+def test_sync_one_warnings_default_is_backwards_compatible(patch_frappe):
+    """Existing test/code callers that pass _sync_one(emp) without warnings
+    must still work — the kwarg is optional."""
+    patch_frappe.get_all.return_value = []
+    # No exception means backwards-compatible signature still works
+    result = _sync_one(_emp())
+    assert result == "created"

@@ -1075,3 +1075,103 @@ After deploy, HR-EMP-01010 and HR-EMP-01013 will silently disappear from Employe
 3. Run `plan_rename` — they'll move from `invalid_pattern` to `to_rename`
 4. Run `run_rename?confirm=yes` to align the Frappe primary key
 5. They re-appear in pickers automatically (filter allows them now)
+
+---
+
+## [Unreleased] — Rehire detection + sync defensiveness sweep (2026-05-25)
+
+### Five sync bugs surfaced by the emp 389 investigation
+
+The manual sync after Phase 4 deploy still showed `records_failed: 3`. Same three records (employeeIds 389, 388, 271) failed with the same Frappe HR validation: *"Relieving Date must be after Date of Joining"*. The previous `cf16a12` mapper fix didn't help — because the actual bug was elsewhere.
+
+Investigation traced emp 389 (MOHD BALEEGH AHMED) to a **rehire scenario**:
+- Original employment: `GDS0260` in greytHR (greytHR ID `300`) — left
+- New employment: `GDS0345` in greytHR (greytHR ID `389`) — currently Active, joining date 2025-12-01
+- Same `company_email` on both greytHR records
+
+Old code's `_find_frappe_employee` matched the new greytHR ID=389 to the OLD Frappe record `GDS0260` (via email), entered the UPDATE path, tried to overwrite GDS0260's fields with the new employment data. The stale `relieving_date` on GDS0260 then conflicted with the new `date_of_joining` and Frappe's validate hook threw. The error was a safety net catching what would otherwise have been silent historical-data corruption.
+
+A broader audit found four more issues in the same flow. All five fixed in this commit.
+
+### Bugs fixed
+
+#### Bug #1 — `_find_frappe_employee` hijacks Frappe records with existing mapping to a different greytHR ID
+
+When email/employee_number matches a candidate Frappe Employee that's *already mapped to a different greytHR ID*, the old code would still return that candidate — silently overwriting it with the new greytHR record's data. Historical employment (separate greytHR record, separate dates, separate everything) is destroyed.
+
+**Fix**: new helper `_candidate_has_different_mapping(candidate, greythr_id)` runs after every email/emp_no match. If the candidate is already linked to a different greytHR ID, returns None instead → `_sync_one` enters CREATE path → new Frappe Employee for the new greytHR record. Logs to Error Log under `"greytHR Rehire Detection"` title so HR can review the routing.
+
+Result: after deploy, emp 389 will create a new Frappe Employee `GDS0345` cleanly. GDS0260 stays untouched. Same for emp 388 and 271 (likely same scenario).
+
+#### Bug #2 — stale `relieving_date` survives Left → Active transitions
+
+When mapper produces `status: Active`, it never explicitly clears `relieving_date`. Existing Frappe records that had a relieving_date from a previous Left period kept it after reactivation. Combined with a new `date_of_joining`, Frappe's validate hook would reject the save.
+
+**Fix**: mapper now explicitly sets `result["relieving_date"] = None` in all three Active branches AND in the date-sanity check that downgrades Left → Active. `_sync_one`'s update loop, which uses `_values_differ(existing, None)`, will then call `set_value` to clear the stale value. Pure additive change — never overwrites valid data, only nulls when greytHR's truth is "no relieving date."
+
+Defensive complement to Bug #1's fix: covers the same-greytHR-ID-reactivation case that wouldn't hit the rehire-detection logic.
+
+#### Bug #3 — step 3 of matching chain read the wrong source field
+
+[tasks/pull_employees.py:237-249] step 3 was supposed to be a `personal_email` fallback but read `mapped["company_email"]` and queried it against the `personal_email` field. Comment said *"personal_email not yet in mapped"* — predates the 2026-05-23 mapper rewrite that added `personal_email` to mapper output. Dormant bug that occasionally matched the wrong person.
+
+**Fix**: step 3 now reads `mapped.get("personal_email")` and only fires if greytHR returned a personal email. Also applies the Bug #1 defensive check to step 3.
+
+#### Bug #6 — Phase 4 `permission_query_conditions` leaked into internal sync lookups
+
+The Phase 4 UX filter (added 2026-05-24) hides invalid-pattern Employees from autocompletes. Frappe applies `permission_query_conditions` to *every* `frappe.get_all("Employee", ...)` unless `ignore_permissions=True` is passed — including server-side sync lookups. Risk: if a future greytHR record's email matched a hidden Employee, sync would silently create a duplicate instead of updating.
+
+**Fix**: added `ignore_permissions=True` to all 4 internal `frappe.get_all` calls in `_find_frappe_employee` (1 mapping lookup + 3 Employee lookups) plus the new `_candidate_has_different_mapping` helper. Sync internals now bypass UX filters by design.
+
+#### Bug #8 — mapper warnings silently discarded
+
+`_sync_one` popped `_mapping_errors` from the mapper output but only used them if `custom_greythr_employee_id` was missing. Warnings like *"gender: unrecognised value"*, *"leftorg=true but no leavingDate"*, *"relieving_date set but date_of_joining missing"* (from `cf16a12`) were silently swallowed. HR had no visibility into greytHR data quality issues the mapper was working around.
+
+**Fix**: `_sync_one(greythr_emp, warnings=None)` now appends per-record mapping_errors to the optional `warnings` list (with `employeeId:` prefix). `_pull` collects them across the batch and passes them to `_finish_sync_log`, which writes them into `error_summary` tagged `WARN`. The Sync Log's `error_summary` field now shows both actual failures and mapper warnings — HR can scan one place to find all data-quality issues.
+
+Backwards-compatible: existing callers (tests, ad-hoc scripts) that call `_sync_one(emp)` without the kwarg still work — warnings just get silently dropped (same as before).
+
+### Files
+
+- ✅ `greythr_bridge/tasks/pull_employees.py`:
+  - New `_candidate_has_different_mapping(candidate, greythr_id)` helper
+  - `_find_frappe_employee` — defensive checks in steps 2/3/4, `ignore_permissions=True` everywhere, step 3 now reads `personal_email`
+  - `_sync_one(greythr_emp, warnings=None)` — appends per-record mapper warnings
+  - `_pull` — collects `warnings` list, passes to `_finish_sync_log`
+  - `_finish_sync_log(sync_log, status, counters, errors, warnings=None)` — emits `WARN`-tagged lines into `error_summary`
+- ✅ `greythr_bridge/mappers/employee_mapper.py` — `result["relieving_date"] = None` in all Active branches + the sanity check
+- ✅ `greythr_bridge/tests/test_pull_employees.py` — 7 new tests:
+  - `test_find_frappe_employee_refuses_to_hijack_record_with_different_mapping` (Bug #1)
+  - `test_find_frappe_employee_still_matches_when_no_existing_mapping` (Bug #1 regression)
+  - `test_find_frappe_employee_matches_when_existing_mapping_is_same_id` (Bug #1 edge case)
+  - `test_find_frappe_employee_step_3_uses_personal_email_not_company_email` (Bug #3)
+  - `test_find_frappe_employee_uses_ignore_permissions_on_employee_lookups` (Bug #6)
+  - `test_sync_one_appends_mapper_warnings_when_warnings_list_provided` (Bug #8)
+  - `test_sync_one_warnings_default_is_backwards_compatible` (Bug #8 regression)
+- ✅ `greythr_bridge/tests/test_mappers.py` — 3 existing tests updated (`"relieving_date" not in result` → `result["relieving_date"] is None`)
+- ✅ `greythr_bridge/tests/test_sync_diagnostics.py` — 1 existing test updated for same reason
+- ✅ `greythr_bridge/tests/test_pull_employees.py` — 1 existing test (`test_active_status_when_no_leaving_date`) updated similarly
+
+### Tests
+
+- **215 passing** (was 208), 3 skipped
+
+### How to verify after deploy
+
+1. Click "Sync from greytHR Now" on the workspace
+2. Wait ~30 sec, refresh `/app/greythr-sync-log`
+3. New Pull Employees entry should show:
+   - `records_failed: 0` (was 3)
+   - `records_created: 3` (emp 389, 388, 271 finally create)
+   - `error_summary` may contain `WARN`-tagged entries for the new visibility into mapper-warned records
+4. Open `/app/employee/GDS0345` → loads with status=Active, joining 2025-12-01, name=MOHD BALEEGH AHMED
+5. Open `/app/employee/GDS0260` → UNCHANGED (still Left, original dates, custom_greythr_employee_id=300)
+6. Open the new "greytHR Rehire Detection" entries in `/app/error-log` → should show the three routing decisions
+
+### Past damage that may already exist (separate follow-up)
+
+The validation error was the safety net catching Bug #1's hijack attempts when `relieving_date < new date_of_joining`. Past rehires where the dates happened to be consistent would have hijacked silently. A read-only audit endpoint to detect candidates for silent-hijack scenarios is worth building as a follow-up. Not blocking this fix.
+
+### Zero data deletion
+
+Bug #1 explicitly PREVENTS silent overwrites of historical employment records. Bug #2's `None` assignment only clears stale `relieving_date` values from existing records — it never destroys data unless greytHR's current truth says the relieving date should be empty. All other fixes are pure read-side / diagnostic improvements. Memory rule `never_delete_employee_records.md` continues to be honoured.

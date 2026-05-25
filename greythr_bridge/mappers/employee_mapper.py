@@ -103,6 +103,16 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
     # Status="Left" requires Frappe's relieving_date to be set, so we only mark
     # Left when we have a parseable leaving date. The leftorg flag is informational
     # — without a date we can't satisfy Frappe's relieving_date requirement.
+    #
+    # Whenever the mapper produces status="Active", it also explicitly emits
+    # `relieving_date = None` so _sync_one's update loop CLEARS any stale
+    # relieving_date on the existing Frappe record. Without the explicit
+    # None, mapper-absence vs mapper-clear are indistinguishable to the
+    # update logic — and a stale relieving_date from a previous "Left" period
+    # would survive a reactivation, breaking Frappe HR's validate hook on
+    # the next date_of_joining update. (Bug seen with rehire scenarios on
+    # 2026-05-25 — emp 389/388/271 stuck on "Relieving Date must be after
+    # Date of Joining".)
     leaving_date = greythr_employee.get("leavingDate")
     left_org_flag = greythr_employee.get("leftorg") or greythr_employee.get("leftOrg")
     if leaving_date:
@@ -113,13 +123,16 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
         else:
             # Date unparseable — mark active to avoid Frappe's relieving_date validation.
             result["status"] = "Active"
+            result["relieving_date"] = None
     elif left_org_flag:
         # leftorg=true but no leavingDate. Can't set status=Left without
         # relieving_date. HR may need to add the date manually.
         result["status"] = "Active"
+        result["relieving_date"] = None
         errors.append("leftorg=true but no leavingDate — cannot set status=Left")
     else:
         result["status"] = "Active"
+        result["relieving_date"] = None
 
     # ── separation details (when called with separation endpoint data) ─────────
     if reason := greythr_employee.get("leavingReason"):
@@ -158,7 +171,9 @@ def greythr_to_frappe(greythr_employee: dict) -> dict:
                 f"keeping status Active; HR must fix the dates in greytHR "
                 f"for employeeId={emp_id}"
             )
-        result.pop("relieving_date", None)
+        # Explicit None (not pop) so _sync_one's update loop clears any stale
+        # relieving_date on the existing Frappe record — see Bug #2 note above.
+        result["relieving_date"] = None
         result["status"] = "Active"
 
     result["_mapping_errors"] = errors
