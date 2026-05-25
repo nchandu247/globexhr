@@ -305,11 +305,15 @@ def test_active_status_when_no_leaving_date():
 #     emp_no + same email): all signals match → allow + correct mapping ID
 
 
-def _make_candidate(name, employee_number=None, company_email=None):
+def _make_candidate(name, employee_number=None, company_email=None, first_name=None):
     """Mock a Frappe Employee doc with .name + .get() returning specific fields."""
     doc = MagicMock()
     doc.name = name
-    fields = {"employee_number": employee_number, "company_email": company_email}
+    fields = {
+        "employee_number": employee_number,
+        "company_email": company_email,
+        "first_name": first_name,
+    }
     doc.get.side_effect = lambda f, *a, **kw: fields.get(f)
     return doc
 
@@ -338,68 +342,123 @@ def test_find_frappe_employee_refuses_rehire(patch_frappe):
 
 
 def test_find_frappe_employee_refuses_data_corruption(patch_frappe):
-    """DATA CORRUPTION: employee_numbers match but emails differ → DIFFERENT
-    people. Refuse the match (would otherwise overwrite Sundareshwaran with
-    Thenmozhi's data)."""
+    """DATA CORRUPTION: employee_numbers match but first_names differ →
+    DIFFERENT people. Refuse the match (would otherwise overwrite
+    Sundareshwaran's record with Thenmozhi's data).
+
+    v5 fix (2026-05-25): switched secondary signal from company_email to
+    first_name. Email comparisons produced false-positives (candidate often
+    has empty/stale email) that blocked legitimate broken-mapping cases."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
-    # Candidate is Sundareshwaran's record currently misnamed GDS0167
-    # (legacy from a past hijacked sync) with HIS email.
     candidate = _make_candidate(
         "GDS0167",
         employee_number="GDS0167",
-        company_email="sundareshwaran@example.com",
+        first_name="Sundareshwaran Selvaraj",
     )
     patch_frappe.get_doc.return_value = candidate
-    # Incoming greytHR record IS Thenmozhi, also employeeNo GDS0167 but
-    # different email.
     patch_frappe.get_all.side_effect = [
         [],                                       # step 1: no mapping for ID=191
-        [],                                       # step 2: company_email won't match (Thenmozhi's email != Sundar's)
-        [],                                       # step 3: personal_email won't match either
-        [{"name": "GDS0167"}],                    # step 4: employee_number GDS0167 finds Sundar's record
-        [{"greythr_employee_id": "<stale>"}],     # _is_different_employment: candidate has stale mapping
+        [],                                       # step 2: company_email won't match
+        [],                                       # step 3: personal_email won't match
+        [{"name": "GDS0167"}],                    # step 4: employee_number finds Sundar's record
+        [{"greythr_employee_id": "<stale>"}],     # _is_different_employment: stale mapping
     ]
     result = _find_frappe_employee(
         {
             "company_email": "thenmozhi@example.com",
             "employee_number": "GDS0167",
+            "first_name": "Thenmozhi Navaneethan",
         },
         greythr_id="191",
     )
     assert result is None, (
-        "Email mismatch with same employee_number = DIFFERENT person. "
+        "first_name conflict with same employee_number = DIFFERENT person. "
         "MUST refuse so we don't overwrite the existing record."
     )
 
 
-def test_find_frappe_employee_allows_broken_mapping_with_signals_matching(patch_frappe):
-    """BROKEN MAPPING: signals (employee_number + email) all match — same
-    person, just stale mapping ID. Allow match so UPDATE happens and
-    _upsert_mapping corrects the stale greythr_employee_id."""
+def test_find_frappe_employee_allows_broken_mapping_with_matching_first_name(patch_frappe):
+    """BROKEN MAPPING: employee_number AND first_name agree — same person,
+    just stale mapping ID. Allow match so UPDATE happens and _upsert_mapping
+    corrects the stale greythr_employee_id."""
     from greythr_bridge.tasks.pull_employees import _find_frappe_employee
     candidate = _make_candidate(
         "GDS0215",
         employee_number="GDS0215",
-        company_email="employee215@example.com",
+        first_name="Some Person",
     )
     patch_frappe.get_doc.return_value = candidate
+    # Mapped has no company_email / personal_email → steps 2 + 3 are skipped
+    # entirely (the `if email := mapped.get(...)` guard evaluates to None).
+    # Only 3 get_all calls fire: step 1, step 4, defensive check.
     patch_frappe.get_all.side_effect = [
         [],                                       # step 1: no mapping for ID=250
-        [{"name": "GDS0215"}],                    # step 2: email match
+        [{"name": "GDS0215"}],                    # step 4: employee_number match
         [{"greythr_employee_id": "<stale>"}],     # _is_different_employment: stale mapping
     ]
     result = _find_frappe_employee(
+        {"employee_number": "GDS0215", "first_name": "Some Person"},
+        greythr_id="250",
+    )
+    assert result is candidate, (
+        "Same employee_number + same first_name → same person, broken mapping. "
+        "Must return the candidate."
+    )
+
+
+def test_find_frappe_employee_allows_broken_mapping_when_email_missing(patch_frappe):
+    """v5 regression: broken-mapping case where candidate has no email set
+    in Frappe (common — sync never enriched it, or it was cleared) must
+    still ALLOW the match. The v4 logic over-strictly required emails to
+    match, refusing legitimate same-person records (GDS0215/0216/0228/0282
+    on 2026-05-25 deploy)."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    candidate = _make_candidate(
+        "GDS0215",
+        employee_number="GDS0215",
+        first_name="Some Person",
+        company_email=None,  # key condition — no email on Frappe side
+    )
+    patch_frappe.get_doc.return_value = candidate
+    patch_frappe.get_all.side_effect = [
+        [],
+        [],
+        [{"name": "GDS0215"}],
+        [{"greythr_employee_id": "<stale>"}],
+    ]
+    result = _find_frappe_employee(
         {
-            "company_email": "employee215@example.com",
             "employee_number": "GDS0215",
+            "first_name": "Some Person",
+            "company_email": "now-greythr-has-an-email@example.com",
         },
         greythr_id="250",
     )
     assert result is candidate, (
-        "All identity signals agree → same person, broken mapping. "
-        "Must return the candidate so UPDATE + _upsert_mapping correction "
-        "fix the stale greythr_employee_id."
+        "Missing candidate email must NOT block a broken-mapping match. "
+        "v5 relies on first_name as the discriminator instead of email."
     )
+
+
+def test_find_frappe_employee_allows_broken_mapping_when_first_name_missing(patch_frappe):
+    """Edge case: neither side has first_name (very early sync state).
+    With no conflicting signal beyond employee_number, default to ALLOW —
+    employee_number agreement is the strongest available signal."""
+    from greythr_bridge.tasks.pull_employees import _find_frappe_employee
+    candidate = _make_candidate(
+        "GDS0215", employee_number="GDS0215", first_name=None,
+    )
+    patch_frappe.get_doc.return_value = candidate
+    patch_frappe.get_all.side_effect = [
+        [],
+        [{"name": "GDS0215"}],
+        [{"greythr_employee_id": "<stale>"}],
+    ]
+    result = _find_frappe_employee(
+        {"employee_number": "GDS0215"},
+        greythr_id="250",
+    )
+    assert result is candidate
 
 
 def test_find_frappe_employee_still_matches_when_no_existing_mapping(patch_frappe):

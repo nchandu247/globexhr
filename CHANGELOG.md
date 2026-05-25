@@ -1289,3 +1289,74 @@ Trigger "Sync from greytHR Now":
 ### Zero data deletion (still)
 
 The v4 fix is purely about distinguishing same-person from different-person and routing accordingly. No records deleted. Broken mappings are corrected (not deleted). Corruption case fails loudly so HR repairs (not silently overwrites). Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Matching v5: first_name as secondary signal (2026-05-25)
+
+### What v4 got wrong
+
+v4 (`c4cea0b`) required BOTH `employee_number` AND `company_email` to match before allowing a broken-mapping match. After deploy:
+
+- ✅ GDS0167 collision raised cleanly → HR manually renamed Sundareshwaran from `GDS0167` → `GDS0155` → next sync created Thenmozhi cleanly at `GDS0167` (the `records_created: 1`)
+- ❌ The 4 broken-mapping records (GDS0215, GDS0216, GDS0228, GDS0282) **still failed** with name collisions
+
+Root cause: candidate Frappe Employees often have empty/drifted `company_email` (sync never enriched it, or it was cleared, or greytHR now returns a different email). v4's strict "both emails must match" rule refused these legitimate same-person matches, sending them to CREATE → collision.
+
+### v5: first_name replaces company_email as the secondary signal
+
+Decision logic:
+
+```
+no existing mapping OR mapping points at same greytHR ID  →  ALLOW
+employee_number differs                                    →  REFUSE (rehire)
+employee_number matches:
+    both first_names set AND clearly differ                →  REFUSE (data corruption)
+    otherwise                                              →  ALLOW (broken mapping)
+```
+
+Why `first_name` is better than `company_email`:
+- Names are what HR actually sees in lists/forms — they reflect the record's "identity"
+- Less prone to drift than emails (no bulk renames, no reassignment after departure)
+- The Sundareshwaran/Thenmozhi corruption case is uniquely detectable by name
+- The rehire case (MOHD BALEEGH) is caught by `employee_number` differing — first_name check isn't reached
+- Broken-mapping records have matching first_name (past sync wrote the same value greytHR currently returns)
+
+### Edge cases handled
+
+| Scenario | emp_no | first_name | Decision |
+|---|---|---|---|
+| Sundareshwaran/Thenmozhi (data corruption) | match | clearly differ | refuse |
+| MOHD BALEEGH (rehire) | differ | — (not checked) | refuse |
+| GDS0215 et al. broken mapping (names match) | match | match | allow |
+| GDS0215 et al. broken mapping (Frappe has no first_name) | match | one missing | allow (default to trust emp_no) |
+| Person changed name (marriage etc.) | match | differ | refuse, HR fixes Frappe name then re-syncs |
+
+The name-change case is a small false-positive but rare; HR sees the Name Collision Error Log entry, updates Frappe's `first_name`, sync proceeds. Trade-off accepted.
+
+### Files
+
+- `greythr_bridge/tasks/pull_employees.py`:
+  - `_is_different_employment` — secondary signal swapped from `company_email` to `first_name`. Decision matrix documented in the docstring.
+- `greythr_bridge/tests/test_pull_employees.py`:
+  - `_make_candidate` helper now accepts `first_name`
+  - `test_find_frappe_employee_refuses_data_corruption` — uses `first_name` mismatch (Sundareshwaran vs Thenmozhi) as the trigger
+  - `test_find_frappe_employee_allows_broken_mapping_with_matching_first_name` — confirms `first_name` agreement allows the match even without email
+  - `test_find_frappe_employee_allows_broken_mapping_when_email_missing` — regression: v4's strict "both emails must match" used to block this
+  - `test_find_frappe_employee_allows_broken_mapping_when_first_name_missing` — edge case (neither side has `first_name`); defaults to trust `employee_number`
+
+### Tests
+
+- **222 passing** (was 220), 3 skipped
+
+### What HR should expect after deploy
+
+Trigger "Sync from greytHR Now":
+
+1. **4 records auto-recover** — GDS0215, GDS0216, GDS0228, GDS0282 will allow the match, UPDATE the existing records, correct the stale mapping IDs. `records_failed` should drop to **0** (was 4).
+2. **4 new `"greytHR Mapping Correction"` Error Log entries** documenting each correction.
+3. WARN entries for `leftorg=true but no leavingDate` and the Nalluri suresh inverted-dates record continue (informational, mapper handles them).
+
+### Zero data deletion
+
+v5 is just a refinement of the same defensive-matching mechanism — different secondary signal, same goal of preserving historical records. No deletions. Memory rule `never_delete_employee_records.md` continues to be honoured.
