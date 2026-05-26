@@ -600,13 +600,23 @@ def build_experience_context(separation_doc) -> dict:
 
     if employee:
         date_of_joining = getattr(employee, "date_of_joining", None)
-        # Last working day: prefer Employee.relieving_date (Frappe HR's
-        # canonical field). Fall back to Separation's date fields only if
-        # the Employee record doesn't have it yet.
+        # Last working day fallback chain (Bug 3 v2 — 2026-05-26):
+        # Order reflects most-trustworthy to least-trustworthy:
+        #   1. Employee.relieving_date — Frappe HR's canonical "last
+        #      working day" (typically set when status flips to Left)
+        #   2. Separation.boarding_end_date — HR's planned separation
+        #      completion target (closest to "last working day" on the
+        #      Separation form HR fills in)
+        #   3. Separation.relieving_date — possible alias field
+        #   4. Separation.resignation_letter_date — when employee submitted
+        #      resignation (less ideal but better than empty)
+        # If ALL are empty, last_working_day stays None and the template's
+        # Jinja conditional (Bug 4 fix) renders cleanly without the date.
         last_working_day = (
             getattr(employee, "relieving_date", None)
-            or getattr(separation_doc, "relieving_date", None)
             or getattr(separation_doc, "boarding_end_date", None)
+            or getattr(separation_doc, "relieving_date", None)
+            or getattr(separation_doc, "resignation_letter_date", None)
         )
         return {
             # ref_number: employee identifier (GDS####), not separation docname

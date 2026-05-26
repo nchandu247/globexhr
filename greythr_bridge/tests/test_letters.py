@@ -1026,25 +1026,43 @@ class TestSeparationLetterDualAttachment(unittest.TestCase):
     """Bug 1 (2026-05-26): separation letters attach to BOTH the Employee
     (primary, for permanent person-record) AND the Separation doc (secondary,
     for HR workflow view). Filename uses the Employee's GDS#### identifier
-    regardless of which record it's attached to."""
+    regardless of which record it's attached to.
+
+    Bug 1.5 (2026-05-26 v2): secondary attachment uses file_url LINKING
+    instead of duplicating the bytes — Frappe was appending a hash suffix
+    (e.g., GDS002170526e.pdf) when writing the same filename twice. Linking
+    via file_url keeps a single physical file with the clean original name.
+    """
+
+    def _make_capturing_frappe_mock(self, primary_file_url="/private/files/Experience Letter - GDS0021.pdf"):
+        """Build a frappe mock that captures File doc payloads + simulates
+        Frappe assigning a file_url to the primary File on insert."""
+        created_file_docs = []
+
+        def _capture_get_doc(payload):
+            mock = MagicMock()
+            if isinstance(payload, dict) and payload.get("doctype") == "File":
+                created_file_docs.append(payload)
+                # Simulate Frappe assigning file_url to the primary File
+                # (the one with content=bytes, NOT the one with file_url=...)
+                if "content" in payload and "file_url" not in payload:
+                    mock.file_url = primary_file_url
+                else:
+                    mock.file_url = payload.get("file_url")
+            mock.insert = MagicMock()
+            return mock
+
+        return created_file_docs, _capture_get_doc
 
     def test_dual_attach_with_employee_filename(self):
         """generate_and_deliver creates 2 File rows when also_attach_to is
         passed; both use the file_name_suffix (the GDS#### identifier) in
         the filename instead of either attachment's docname."""
         from greythr_bridge.letters import non_signing
-        # Spy on what frappe.get_doc({"doctype": "File", ...}) gets called with
-        created_file_docs = []
-
-        def _capture_get_doc(payload):
-            mock = MagicMock()
-            mock.insert = MagicMock()
-            if isinstance(payload, dict) and payload.get("doctype") == "File":
-                created_file_docs.append(payload)
-            return mock
+        created_file_docs, capture = self._make_capturing_frappe_mock()
 
         with patch("greythr_bridge.letters.non_signing.frappe") as frappe_mock:
-            frappe_mock.get_doc.side_effect = _capture_get_doc
+            frappe_mock.get_doc.side_effect = capture
             with patch.object(non_signing, "merge_to_pdf_via_html",
                               return_value=b"x" * 10000):  # fake non-empty PDF
                 non_signing.generate_and_deliver(
@@ -1071,6 +1089,109 @@ class TestSeparationLetterDualAttachment(unittest.TestCase):
         secondary = created_file_docs[1]
         self.assertEqual(secondary["attached_to_doctype"], "Employee Separation")
         self.assertEqual(secondary["attached_to_name"], "HR-EMP-SEP-2026-00001")
+
+    def test_secondary_attachment_uses_file_url_linking_not_content_write(self):
+        """Bug 1.5 v2: avoid Frappe's hash-suffix collision by linking
+        the secondary File doc to the primary's file_url instead of
+        writing duplicate content."""
+        from greythr_bridge.letters import non_signing
+        created_file_docs, capture = self._make_capturing_frappe_mock(
+            primary_file_url="/private/files/Experience Letter - GDS0021.pdf"
+        )
+
+        with patch("greythr_bridge.letters.non_signing.frappe") as frappe_mock:
+            frappe_mock.get_doc.side_effect = capture
+            with patch.object(non_signing, "merge_to_pdf_via_html",
+                              return_value=b"x" * 10000):
+                non_signing.generate_and_deliver(
+                    template_filename="experience_letter.html",
+                    context={"ref_number": "GDS0021"},
+                    attach_to=("Employee", "GDS0021"),
+                    also_attach_to=("Employee Separation", "HR-EMP-SEP-2026-00001"),
+                    file_label="Experience Letter",
+                    file_name_suffix="GDS0021",
+                    employee_doc=None,
+                )
+
+        primary, secondary = created_file_docs
+        # Primary: WRITE mode — has content, no file_url
+        self.assertIn("content", primary)
+        self.assertNotIn("file_url", primary)
+        # Secondary: LINK mode — has file_url pointing at primary's URL,
+        # no duplicate content write
+        self.assertNotIn("content", secondary)
+        self.assertIn("file_url", secondary)
+        self.assertEqual(secondary["file_url"],
+                         "/private/files/Experience Letter - GDS0021.pdf")
+
+
+class TestLastWorkingDayFallbackChain(unittest.TestCase):
+    """Bug 3 v2 (2026-05-26): expanded fallback chain so we try MORE
+    possible date fields on the Separation when Employee.relieving_date
+    isn't set. Old chain only tried separation.relieving_date and
+    boarding_end_date — many HR workflows fill in resignation_letter_date
+    instead. New chain tries 4 fields."""
+
+    def _make_emp_sep(self, employee_attrs, separation_attrs):
+        sep = MagicMock()
+        sep.name = "HR-EMP-SEP-2026-00001"
+        sep.employee = "GDS0021"
+        for k, v in separation_attrs.items():
+            setattr(sep, k, v)
+        # Also explicitly None-out fields not provided
+        for f in ("relieving_date", "boarding_end_date", "resignation_letter_date"):
+            if f not in separation_attrs:
+                setattr(sep, f, None)
+
+        emp = MagicMock()
+        emp.name = "GDS0021"
+        for k, v in employee_attrs.items():
+            setattr(emp, k, v)
+        emp.get = lambda f, *a, **kw: employee_attrs.get(f)
+        return sep, emp
+
+    def test_falls_through_to_boarding_end_date(self):
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_emp_sep(
+            employee_attrs={"employee_name": "X", "first_name": "X",
+                            "designation": "", "date_of_joining": "2017-11-12",
+                            "relieving_date": None},
+            separation_attrs={"boarding_end_date": "2026-05-31"},
+        )
+        with patch("frappe.get_doc", return_value=emp), \
+             patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
+            context = merger.build_experience_context(sep)
+        self.assertEqual(context["last_working_day"], "2026-05-31")
+
+    def test_falls_through_to_resignation_letter_date(self):
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_emp_sep(
+            employee_attrs={"employee_name": "X", "first_name": "X",
+                            "designation": "", "date_of_joining": "2017-11-12",
+                            "relieving_date": None},
+            separation_attrs={"resignation_letter_date": "2026-04-15"},
+        )
+        with patch("frappe.get_doc", return_value=emp), \
+             patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
+            context = merger.build_experience_context(sep)
+        self.assertEqual(context["last_working_day"], "2026-04-15")
+
+    def test_returns_empty_when_no_date_anywhere(self):
+        """If none of the 4 fields are set, last_working_day is empty.
+        The template's Jinja conditionals (Bug 4 fix) render cleanly
+        without the date phrase."""
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_emp_sep(
+            employee_attrs={"employee_name": "X", "first_name": "X",
+                            "designation": "", "date_of_joining": "2017-11-12",
+                            "relieving_date": None},
+            separation_attrs={},  # nothing set
+        )
+        with patch("frappe.get_doc", return_value=emp), \
+             patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
+            context = merger.build_experience_context(sep)
+        # Empty falsy value — template Jinja conditionals handle it
+        self.assertFalse(context["last_working_day"])
 
 
 if __name__ == "__main__":

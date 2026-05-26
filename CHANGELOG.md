@@ -1664,3 +1664,87 @@ Re-trigger the Separation submit for any employee. The new PDFs should:
 ### Zero data deletion
 
 All changes are letter-generation / display tweaks. No Employee record modifications, no mapping updates. Memory rule `never_delete_employee_records.md` continues to be honoured.
+
+---
+
+## [Unreleased] — Separation letter polish v2: filename hash + date fallback + HR guidance (2026-05-26)
+
+### What v1 (6bddce1) got mostly right but two issues lingered
+
+Live re-test for `nalluri sudha` (GDS0021):
+
+✓ All 5 v1 fixes visible in the PDFs (Ref No = GDS0021, Nalluri Sudha properly cased, clean sentences when designation empty)
+
+But two visible problems remained:
+1. **Filename had a hash suffix**: `Experience Letter - GDS002170526e.pdf` instead of clean `Experience Letter - GDS0021.pdf`. Root cause: dual-attachment wrote the same filename to disk twice → Frappe's storage layer appended a hash to disambiguate.
+2. **last_working_day was blank in the PDF**: *"...from 12 November 2017, a total tenure..."* — missing the *"to <date>"* phrase. Root cause: HR didn't fill in `boarding_end_date` on the Separation form, and Employee.relieving_date wasn't populated (greytHR's GDS0021 record never had a leavingDate).
+
+### Fixes shipped
+
+#### A — Filename hash: dual-attach via file_url linking
+
+`letters/non_signing.py`:
+- `_create_file_attachment` extended with optional `file_url` parameter:
+  - **Write mode** (default, `file_url=None`): writes pdf_bytes to disk; Frappe assigns `file_url`. Used for primary attachment.
+  - **Link mode** (`file_url` provided): no new file written; the new File doc just references the existing `file_url`. Used for secondary attachment.
+- `generate_and_deliver` now captures the primary attachment's `file_url` and passes it to the secondary attachment.
+
+Result: **one physical file on disk, two File rows attaching it to (Employee) AND (Employee Separation), both with the same clean filename `Experience Letter - GDS0021.pdf`**.
+
+Storage savings: 50% on Separation letters (no duplicate writes). Hash-suffix bug gone.
+
+#### B — Expanded `last_working_day` fallback chain
+
+`letters/merger.py::build_experience_context`:
+
+Old chain (3 fields): `employee.relieving_date` → `separation.relieving_date` → `separation.boarding_end_date`
+
+New chain (4 fields, in trust-order):
+```python
+employee.relieving_date           # Frappe HR canonical, set when status flips to Left
+→ separation.boarding_end_date    # HR's planned separation completion target (most common field HR fills in)
+→ separation.relieving_date       # possible alias on Separation
+→ separation.resignation_letter_date  # when employee submitted resignation (last-resort)
+```
+
+The reordering matters: `boarding_end_date` is the field HR typically fills in on the Separation form, so checking it earlier surfaces dates in more cases. The chain still terminates at empty (rather than today's date) — when nothing is set, Bug 4's Jinja conditionals render the letter cleanly without the date phrase, giving HR a clear visual signal that the date is missing.
+
+#### C — HR guidance for missing date
+
+**Before submitting an Employee Separation, HR should fill in the `Boarding End Date` field** (Frappe HR's "separation completion target" — serves as the last working day). The letter's `last_working_day` populates from this field if `Employee.relieving_date` isn't set yet.
+
+If HR forgets, the letters still generate but without the date phrase. HR can:
+1. Set `boarding_end_date` on the Separation OR `relieving_date` on the Employee
+2. Re-trigger the letter (delete current attachments, re-submit the Separation, OR use a future "Regenerate" button)
+
+Will track adding a "Regenerate Letter" workspace button as a follow-up if HR feedback shows this is a common case.
+
+### Files
+
+- `greythr_bridge/letters/non_signing.py` — `_create_file_attachment` adds `file_url` param (link mode); `generate_and_deliver` uses it for secondary
+- `greythr_bridge/letters/merger.py::build_experience_context` — 4-field fallback chain (was 3)
+- `greythr_bridge/tests/test_letters.py` — 4 new tests:
+  - `TestSeparationLetterDualAttachment.test_secondary_attachment_uses_file_url_linking_not_content_write` — verifies primary writes content, secondary uses file_url (link mode)
+  - `TestLastWorkingDayFallbackChain.test_falls_through_to_boarding_end_date`
+  - `TestLastWorkingDayFallbackChain.test_falls_through_to_resignation_letter_date`
+  - `TestLastWorkingDayFallbackChain.test_returns_empty_when_no_date_anywhere` (defensive: when all 4 fields blank, returns falsy → template renders cleanly)
+
+### Tests
+
+- **258 passing** (was 254), 3 skipped
+
+### What HR sees after deploy
+
+For new Separation submits where HR has filled in `Boarding End Date`:
+- Letters attach with clean filenames: `Experience Letter - GDS0021.pdf` (NO `70526e` hash suffix)
+- Single physical file on disk; both Employee + Separation tabs show the same attachment
+- `last_working_day` populated correctly in both letter bodies
+
+For Separations where HR didn't fill in any date field:
+- Letters still generate (don't fail)
+- Date phrase omitted gracefully via Jinja conditionals
+- HR can re-trigger after filling in the date
+
+### Zero data deletion
+
+Continues the pattern: no Employee or mapping record modifications, only letter file storage tweaks. Memory rule `never_delete_employee_records.md` honoured.

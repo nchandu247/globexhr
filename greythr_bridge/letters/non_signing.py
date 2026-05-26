@@ -78,16 +78,21 @@ def generate_and_deliver(
     name_slug = file_name_suffix or docname
     file_name = f"{safe_label} - {name_slug}.pdf"
 
-    # 3. Attach to the PRIMARY record
-    _create_file_attachment(file_name, pdf_bytes, doctype, docname)
+    # 3. Attach to the PRIMARY record (writes content to disk).
+    primary_file = _create_file_attachment(file_name, pdf_bytes, doctype, docname)
 
-    # 4. (Optional) attach to a SECOND record with the same filename.
-    #    Frappe creates a separate File row per attachment but the bytes are
-    #    deduplicated by Frappe's file storage layer (content hash).
+    # 4. (Optional) attach to a SECOND record. To avoid the hash-suffix bug
+    #    (where Frappe's storage layer appends "70526e" etc. when writing a
+    #    duplicate filename), the secondary attachment LINKS to the primary
+    #    file's URL instead of writing new content. Same clean filename
+    #    on both attachments, single physical file on disk.
     if also_attach_to:
         also_dt, also_dn = also_attach_to
         try:
-            _create_file_attachment(file_name, pdf_bytes, also_dt, also_dn)
+            _create_file_attachment(
+                file_name, pdf_bytes, also_dt, also_dn,
+                file_url=getattr(primary_file, "file_url", None),
+            )
         except Exception as exc:
             # Secondary attachment is best-effort — don't fail the whole
             # letter generation if it errors. Primary attachment + email
@@ -132,17 +137,37 @@ def generate_and_deliver(
 
 
 def _create_file_attachment(file_name: str, pdf_bytes: bytes,
-                             doctype: str, docname: str) -> None:
-    """Insert a File doc attaching pdf_bytes to (doctype, docname)."""
-    file_doc = frappe.get_doc({
+                             doctype: str, docname: str,
+                             file_url: str | None = None):
+    """
+    Insert a File doc attaching to (doctype, docname).
+
+    Two modes:
+      - WRITE mode (default, file_url=None): writes pdf_bytes to disk via
+        Frappe's storage layer. Used for the primary attachment.
+      - LINK mode (file_url provided): no new file written; the new File
+        doc just references the existing file_url. Used for secondary
+        attachments to avoid Frappe appending hash suffixes when writing
+        a duplicate filename.
+
+    Returns the inserted File doc (caller can read file_url for chaining).
+    """
+    payload = {
         "doctype": "File",
         "file_name": file_name,
         "attached_to_doctype": doctype,
         "attached_to_name": docname,
-        "content": pdf_bytes,
         "is_private": 1,
-    })
+    }
+    if file_url:
+        # Link mode — no duplicate write, no hash suffix
+        payload["file_url"] = file_url
+    else:
+        # Write mode — Frappe writes content to disk
+        payload["content"] = pdf_bytes
+    file_doc = frappe.get_doc(payload)
     file_doc.insert(ignore_permissions=True)
+    return file_doc
 
 
 def _resolve_email(employee_doc, prefer_personal: bool) -> str | None:
