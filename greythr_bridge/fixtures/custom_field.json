@@ -259,6 +259,18 @@
   "module": "greytHR",
   "description": "Generate and email Relieving Letter on Separation submit."
  },
+ {
+  "doctype": "Custom Field",
+  "name": "Employee Separation-custom_last_working_date",
+  "dt": "Employee Separation",
+  "fieldname": "custom_last_working_date",
+  "label": "Last Working Date",
+  "fieldtype": "Date",
+  "insert_after": "custom_send_relieving_letter",
+  "module": "greytHR",
+  "mandatory_depends_on": "eval:doc.custom_send_experience_letter || doc.custom_send_relieving_letter",
+  "description": "The employee's actual last working day. Used by Experience and Relieving letter templates as the relieving date. Frappe HR's stock Employee Separation doesn't have a 'last working day' field; this fills the gap. Mandatory only when either letter checkbox is ticked."
+ },
 
  {
   "doctype": "Custom Field",

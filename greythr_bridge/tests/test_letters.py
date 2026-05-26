@@ -879,15 +879,38 @@ class TestPhaseBCustomFields(unittest.TestCase):
         with open(path) as f:
             data = json.load(f)
         fieldnames = {d["fieldname"] for d in data if "fieldname" in d}
-        # 12 Phase B fields
+        # 12 Phase B fields + 1 added 2026-05-26 (A-v2: custom_last_working_date)
         for expected in ("custom_offer_type", "custom_engagement_duration_months",
                           "custom_professional_fees_monthly", "custom_stipend_monthly",
                           "custom_internship_duration_months", "custom_annual_ctc",
                           "custom_send_increment_letter", "custom_increment_letter_generated",
                           "custom_send_experience_letter", "custom_send_relieving_letter",
                           "custom_promotion_letter_attached",
-                          "custom_service_certificate_issued_at"):
+                          "custom_service_certificate_issued_at",
+                          "custom_last_working_date"):
             self.assertIn(expected, fieldnames, f"Missing Phase B field: {expected}")
+
+    def test_custom_last_working_date_is_conditionally_mandatory(self):
+        """A-v2: custom_last_working_date should be mandatory when either
+        letter checkbox is ticked, so HR can't submit a Separation
+        intending to send letters but missing the date."""
+        import os, json
+        path = os.path.join(os.path.dirname(__file__), "..", "fixtures",
+                             "custom_field.json")
+        with open(path) as f:
+            data = json.load(f)
+        lwd = next(
+            (d for d in data if d.get("fieldname") == "custom_last_working_date"),
+            None,
+        )
+        self.assertIsNotNone(lwd,
+            "custom_last_working_date must exist in custom_field.json")
+        self.assertEqual(lwd["dt"], "Employee Separation")
+        self.assertEqual(lwd["fieldtype"], "Date")
+        # Conditional mandatory expression must reference both checkboxes
+        mdo = lwd.get("mandatory_depends_on", "")
+        self.assertIn("custom_send_experience_letter", mdo)
+        self.assertIn("custom_send_relieving_letter", mdo)
 
 
 class TestFormatName(unittest.TestCase):
@@ -1126,11 +1149,19 @@ class TestSeparationLetterDualAttachment(unittest.TestCase):
 
 
 class TestLastWorkingDayFallbackChain(unittest.TestCase):
-    """Bug 3 v2 (2026-05-26): expanded fallback chain so we try MORE
-    possible date fields on the Separation when Employee.relieving_date
-    isn't set. Old chain only tried separation.relieving_date and
-    boarding_end_date — many HR workflows fill in resignation_letter_date
-    instead. New chain tries 4 fields."""
+    """A-v2 (2026-05-26): the fallback chain for `last_working_day`.
+
+    Order (most-trustworthy to least):
+      1. Employee.relieving_date    — greytHR-synced, canonical
+      2. Separation.custom_last_working_date  — our custom field, HR-entered
+      3. Separation.resignation_letter_date   — Frappe HR fallback
+
+    We intentionally DROPPED the `boarding_end_date` branch from v1 because
+    that field doesn't exist on Frappe HR's stock Employee Separation doctype
+    (research confirmed 2026-05-26 — the only stock date fields are
+    resignation_letter_date and boarding_begins_on, plus exit_interview
+    which is a text field not a date).
+    """
 
     def _make_emp_sep(self, employee_attrs, separation_attrs):
         sep = MagicMock()
@@ -1138,8 +1169,8 @@ class TestLastWorkingDayFallbackChain(unittest.TestCase):
         sep.employee = "GDS0021"
         for k, v in separation_attrs.items():
             setattr(sep, k, v)
-        # Also explicitly None-out fields not provided
-        for f in ("relieving_date", "boarding_end_date", "resignation_letter_date"):
+        # Explicitly None-out fields not provided (matches Frappe HR's default)
+        for f in ("custom_last_working_date", "resignation_letter_date"):
             if f not in separation_attrs:
                 setattr(sep, f, None)
 
@@ -1150,13 +1181,32 @@ class TestLastWorkingDayFallbackChain(unittest.TestCase):
         emp.get = lambda f, *a, **kw: employee_attrs.get(f)
         return sep, emp
 
-    def test_falls_through_to_boarding_end_date(self):
+    def test_primary_employee_relieving_date_wins(self):
+        """When Employee.relieving_date is set (greytHR-synced), use it
+        even if separation has a different value."""
+        from greythr_bridge.letters import merger
+        sep, emp = self._make_emp_sep(
+            employee_attrs={"employee_name": "X", "first_name": "X",
+                            "designation": "", "date_of_joining": "2017-11-12",
+                            "relieving_date": "2022-09-30"},  # greytHR-set
+            separation_attrs={"custom_last_working_date": "2026-05-31"},  # HR-entered different
+        )
+        with patch("frappe.get_doc", return_value=emp), \
+             patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
+            context = merger.build_experience_context(sep)
+        # greytHR (Employee field) wins per the trust order
+        self.assertEqual(context["last_working_day"], "2022-09-30")
+
+    def test_falls_through_to_custom_last_working_date(self):
+        """When Employee.relieving_date is None (typical for first-time
+        Separation HR creates manually), the HR-entered custom field is
+        picked up next."""
         from greythr_bridge.letters import merger
         sep, emp = self._make_emp_sep(
             employee_attrs={"employee_name": "X", "first_name": "X",
                             "designation": "", "date_of_joining": "2017-11-12",
                             "relieving_date": None},
-            separation_attrs={"boarding_end_date": "2026-05-31"},
+            separation_attrs={"custom_last_working_date": "2026-05-31"},
         )
         with patch("frappe.get_doc", return_value=emp), \
              patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
@@ -1164,6 +1214,8 @@ class TestLastWorkingDayFallbackChain(unittest.TestCase):
         self.assertEqual(context["last_working_day"], "2026-05-31")
 
     def test_falls_through_to_resignation_letter_date(self):
+        """Last-resort fallback when HR didn't fill in custom_last_working_date.
+        Semantically off but better than empty."""
         from greythr_bridge.letters import merger
         sep, emp = self._make_emp_sep(
             employee_attrs={"employee_name": "X", "first_name": "X",
@@ -1177,9 +1229,11 @@ class TestLastWorkingDayFallbackChain(unittest.TestCase):
         self.assertEqual(context["last_working_day"], "2026-04-15")
 
     def test_returns_empty_when_no_date_anywhere(self):
-        """If none of the 4 fields are set, last_working_day is empty.
-        The template's Jinja conditionals (Bug 4 fix) render cleanly
-        without the date phrase."""
+        """If none of the 3 fields are set, last_working_day is empty.
+        Template's Jinja conditionals (Bug 4 fix) render cleanly without
+        the date phrase. The custom field's `mandatory_depends_on` should
+        prevent this case in practice (HR can't submit without it when a
+        letter checkbox is ticked), but the defensive empty path remains."""
         from greythr_bridge.letters import merger
         sep, emp = self._make_emp_sep(
             employee_attrs={"employee_name": "X", "first_name": "X",
@@ -1190,8 +1244,21 @@ class TestLastWorkingDayFallbackChain(unittest.TestCase):
         with patch("frappe.get_doc", return_value=emp), \
              patch.object(merger, "fmt_date", side_effect=lambda v: str(v) if v else ""):
             context = merger.build_experience_context(sep)
-        # Empty falsy value — template Jinja conditionals handle it
         self.assertFalse(context["last_working_day"])
+
+    def test_no_longer_checks_boarding_end_date_dead_field(self):
+        """Regression: the old v1 code checked separation.boarding_end_date
+        which doesn't exist on stock Frappe HR. If someone re-adds it to
+        the chain, this test catches the regression by checking that the
+        actual getattr lookup is absent. (Mentions in comments are fine.)"""
+        import inspect
+        from greythr_bridge.letters import merger
+        src = inspect.getsource(merger.build_experience_context)
+        self.assertNotIn(
+            'getattr(separation_doc, "boarding_end_date"', src,
+            "build_experience_context shouldn't getattr boarding_end_date — "
+            "the field doesn't exist on Frappe HR's stock Employee Separation."
+        )
 
 
 if __name__ == "__main__":

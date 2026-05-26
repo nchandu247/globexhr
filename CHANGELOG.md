@@ -1748,3 +1748,78 @@ For Separations where HR didn't fill in any date field:
 ### Zero data deletion
 
 Continues the pattern: no Employee or mapping record modifications, only letter file storage tweaks. Memory rule `never_delete_employee_records.md` honoured.
+
+---
+
+## [Unreleased] — A-v2: custom_last_working_date field for Separation letters (2026-05-26)
+
+### Research that changed the picture
+
+Investigated Frappe HR's `Employee Separation` doctype to answer: does submit auto-populate `Employee.relieving_date`? Findings:
+
+- **No.** Frappe HR's `EmployeeSeparation.on_submit` does NOT touch Employee at all. Verified against `hrms` source: `hrms/hr/doctype/employee_separation/employee_separation.py` only sets up the boarding Project; `hrms/hooks.py` has no `doc_events` for Employee Separation. HR is expected to manually update Employee.relieving_date.
+- The field name **`boarding_end_date` does NOT exist** on stock Frappe HR Employee Separation. My earlier v2 fallback chain checked it — dead code. The actual stock date fields are: `resignation_letter_date`, `boarding_begins_on` (required), `exit_interview` (text not date).
+
+### Why I'm NOT building a bridge handler (the rejected approach)
+
+Originally considered: have our `on_separation_submitted` hook also write `Employee.relieving_date` and `Employee.status = "Left"`. Rejected after analysis because:
+
+1. **Violates one-way sync invariant** — greytHR → Frappe is the canonical write direction. Bridge value would get overwritten by next sync run anyway (24h max).
+2. **Side effect risk** — auto-setting `Employee.status = "Left"` triggers Frappe HR's User-account disable and other cascading actions. If HR is generating a resignation acknowledgment letter while the person is still in notice period, disabling them immediately is wrong.
+3. **Two sources of truth competing** — adds confusion about which value is canonical.
+
+The clean answer: keep Employee record as greytHR's domain, store the HR-entered separation date on the Separation itself.
+
+### A-v2: what's shipped
+
+**Custom field `custom_last_working_date`** on Employee Separation:
+- Type: Date
+- Mandatory when either `custom_send_experience_letter` or `custom_send_relieving_letter` is checked (Frappe's `mandatory_depends_on: "eval:..."`)
+- Position: right after the letter checkboxes
+- Auto-installed via the existing fixtures filter
+
+**Updated letter fallback chain** in `build_experience_context`:
+```
+employee.relieving_date              # greytHR-synced, canonical (one-way)
+→ separation.custom_last_working_date   # HR-entered on Separation form
+→ separation.resignation_letter_date    # Frappe HR fallback (semantically off)
+```
+
+Dead `boarding_end_date` branch removed (the field doesn't exist on Frappe HR's stock doctype).
+
+### Files
+
+- `fixtures/custom_field.json` — new entry for `Employee Separation-custom_last_working_date`
+- `letters/merger.py::build_experience_context` — chain updated; long inline comment documents the design + why no bridge to Employee
+- `tests/test_letters.py`:
+  - `TestLastWorkingDayFallbackChain` — 5 tests rewritten:
+    - primary (employee.relieving_date) wins when set
+    - falls through to custom_last_working_date
+    - falls through to resignation_letter_date
+    - returns empty when all 3 fields blank (template Jinja handles gracefully)
+    - regression: getattr(boarding_end_date) absent from source
+  - `TestPhaseBCustomFields` — 2 updates:
+    - `custom_last_working_date` added to expected fields list (13 total now)
+    - new `test_custom_last_working_date_is_conditionally_mandatory` pins the `mandatory_depends_on` expression
+
+### Tests
+
+- **261 passing** (was 258), 3 skipped
+
+### How HR uses this after deploy
+
+When creating an Employee Separation:
+1. Pick Employee, fill in mandatory fields (boarding_begins_on, etc.)
+2. Decide which letters to send (the two checkboxes)
+3. **If either letter checkbox is ticked, fill in "Last Working Date"** (the new custom field becomes mandatory)
+4. Submit
+
+Letter generation reads `custom_last_working_date` if `Employee.relieving_date` isn't set yet. The letter's date placeholder always populates (assuming HR filled the field, which is now enforced at form-level).
+
+### What greytHR sync does
+
+Unchanged. The greytHR pull continues to be the only writer of `Employee.relieving_date` and `Employee.status`. When greytHR's `leavingDate` is set for an employee, mapper populates Employee.relieving_date → letter's primary fallback finds it there → custom_last_working_date becomes a fallback. The two sources can coexist; greytHR wins when both are present.
+
+### Zero data deletion
+
+A-v2 is purely additive: one new custom field, fallback chain refinement, no Employee/Mapping modifications. Memory rule `never_delete_employee_records.md` honoured.

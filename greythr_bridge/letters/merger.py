@@ -600,22 +600,30 @@ def build_experience_context(separation_doc) -> dict:
 
     if employee:
         date_of_joining = getattr(employee, "date_of_joining", None)
-        # Last working day fallback chain (Bug 3 v2 — 2026-05-26):
+        # Last working day fallback chain (A-v2 — 2026-05-26):
         # Order reflects most-trustworthy to least-trustworthy:
-        #   1. Employee.relieving_date — Frappe HR's canonical "last
-        #      working day" (typically set when status flips to Left)
-        #   2. Separation.boarding_end_date — HR's planned separation
-        #      completion target (closest to "last working day" on the
-        #      Separation form HR fills in)
-        #   3. Separation.relieving_date — possible alias field
-        #   4. Separation.resignation_letter_date — when employee submitted
-        #      resignation (less ideal but better than empty)
-        # If ALL are empty, last_working_day stays None and the template's
-        # Jinja conditional (Bug 4 fix) renders cleanly without the date.
+        #   1. Employee.relieving_date — Frappe HR's canonical field,
+        #      populated by greytHR sync when leavingDate is present
+        #      (greytHR is the source of truth for payroll-affecting dates)
+        #   2. Separation.custom_last_working_date — our custom field,
+        #      mandatory when either letter checkbox is ticked. HR-entered
+        #      on the Separation form. Semantically exactly "last working
+        #      day" — fills the gap that Frappe HR's stock Separation lacks.
+        #   3. Separation.resignation_letter_date — Frappe HR's existing
+        #      date field, semantically off ("when employee handed in
+        #      resignation") but better than empty.
+        #
+        # Earlier dead code: `boarding_end_date` was checked here but that
+        # field doesn't actually exist on Frappe HR's stock Employee
+        # Separation doctype (research 2026-05-26). Removed.
+        #
+        # We INTENTIONALLY don't write back to Employee.relieving_date —
+        # that would violate the one-way greytHR-to-Frappe sync invariant
+        # (the bridge value would just get overwritten by the next sync).
+        # Letter reads from this chain; Employee record is greytHR's domain.
         last_working_day = (
             getattr(employee, "relieving_date", None)
-            or getattr(separation_doc, "boarding_end_date", None)
-            or getattr(separation_doc, "relieving_date", None)
+            or getattr(separation_doc, "custom_last_working_date", None)
             or getattr(separation_doc, "resignation_letter_date", None)
         )
         return {
