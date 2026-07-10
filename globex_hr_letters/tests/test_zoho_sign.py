@@ -362,13 +362,12 @@ def test_resend_signing_request_raises_on_error(patch_frappe, settings):
         resend_signing_request("REQ-001")
 
 
-# ── webhook _download_and_attach_signed_pdf ───────────────────────────────────
+# ── webhook _handle_completed ─────────────────────────────────────────────────
 
 @rsps_lib.activate
-def test_download_and_attach_signed_pdf_creates_file(patch_frappe, settings):
-    """Verify webhook helper downloads signed PDF from Zoho and creates a File doc."""
-    from unittest.mock import MagicMock
-
+def test_handle_completed_attaches_signed_pdf(patch_frappe, settings):
+    """Webhook completion downloads the signed PDF from Zoho, marks the HR
+    Letter Signed, and creates a File attached to the HR Letter."""
     settings.get_password.return_value = "test_refresh_token"
     settings.zoho_sign_access_token = None
     settings.zoho_sign_token_expires_at = None
@@ -383,31 +382,48 @@ def test_download_and_attach_signed_pdf_creates_file(patch_frappe, settings):
         status=200,
     )
 
-    file_doc_mock = MagicMock()
-    patch_frappe.get_doc.return_value = file_doc_mock
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
 
-    from globex_hr_letters.webhooks.zoho_sign import _download_and_attach_signed_pdf
-    _download_and_attach_signed_pdf("HR-OFF-2026-TEST", "REQ-COMPLETE")
+    letter_mock = MagicMock()
+    letter_mock.letter_type = "Offer Letter"
+    letter_mock.recipient = "GDS0021"
+    letter_mock.recipient_type = "Employee"
 
-    # frappe.get_doc should have been called to create a File record
-    get_doc_calls = patch_frappe.get_doc.call_args_list
-    file_creation_call = None
-    for call in get_doc_calls:
-        if call.args and isinstance(call.args[0], dict) and call.args[0].get("doctype") == "File":
-            file_creation_call = call
-            break
-    assert file_creation_call is not None, "No File doc was created"
-    file_dict = file_creation_call.args[0]
-    assert file_dict["attached_to_doctype"] == "Job Offer"
-    assert file_dict["attached_to_name"] == "HR-OFF-2026-TEST"
+    def fake_get_doc(arg, *args):
+        if isinstance(arg, dict):
+            return MagicMock()  # File doc
+        return letter_mock  # HR Letter fetch
+
+    patch_frappe.get_doc.side_effect = fake_get_doc
+
+    from globex_hr_letters.webhooks.zoho_sign import _handle_completed
+    _handle_completed("HR-LTR-2026-0001", "REQ-COMPLETE")
+
+    # Status flipped to Signed via _safe_set_value
+    status_calls = [
+        c for c in patch_frappe.db.set_value.call_args_list
+        if c.args[:3] == ("HR Letter", "HR-LTR-2026-0001", "status")
+    ]
+    assert status_calls and status_calls[0].args[3] == "Signed"
+
+    # A File doc was created with the signed PDF, attached to the HR Letter
+    file_calls = [
+        c for c in patch_frappe.get_doc.call_args_list
+        if c.args and isinstance(c.args[0], dict) and c.args[0].get("doctype") == "File"
+    ]
+    assert file_calls, "No File doc was created"
+    file_dict = file_calls[0].args[0]
+    assert file_dict["attached_to_doctype"] == "HR Letter"
+    assert file_dict["attached_to_name"] == "HR-LTR-2026-0001"
     assert file_dict["content"] == pdf_bytes
     assert file_dict["is_private"] == 1
-    file_doc_mock.insert.assert_called_once()
 
 
 @rsps_lib.activate
-def test_download_and_attach_signed_pdf_handles_empty(patch_frappe, settings):
-    """If Zoho returns empty PDF, helper should log but not raise."""
+def test_handle_completed_empty_pdf_does_not_raise(patch_frappe, settings):
+    """If Zoho returns an empty PDF, the handler logs but does not raise."""
     settings.get_password.return_value = "test_refresh_token"
     settings.zoho_sign_access_token = None
     settings.zoho_sign_token_expires_at = None
@@ -421,9 +437,13 @@ def test_download_and_attach_signed_pdf_handles_empty(patch_frappe, settings):
         status=200,
     )
 
-    from globex_hr_letters.webhooks.zoho_sign import _download_and_attach_signed_pdf
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
+
+    from globex_hr_letters.webhooks.zoho_sign import _handle_completed
     # Should not raise
-    _download_and_attach_signed_pdf("HR-OFF-TEST", "REQ-EMPTY")
+    _handle_completed("HR-LTR-2026-0002", "REQ-EMPTY")
 
 
 # ── _safe_set_value (defensive helper added 2026-05-22 after stuck-status bug) ──
@@ -481,27 +501,17 @@ def test_safe_set_value_rolls_back_on_db_error(patch_frappe):
     patch_frappe.db.rollback.assert_called_once()
 
 
-def test_force_complete_offer_function_exists_and_returns_dict(patch_frappe):
-    """
-    Sanity: force_complete_offer exists, is whitelisted, and returns the
-    expected dict shape. Behavioural assertions (status updated, PDF
-    enqueued) are too tightly coupled to MagicMock internals — verified
-    in live testing instead.
-    """
-    from unittest.mock import MagicMock
+def test_resolve_hr_letter_by_request_id(patch_frappe):
+    """The webhook routes callbacks to the HR Letter whose zoho_request_id
+    matches; unknown ids resolve to empty string."""
+    from globex_hr_letters.webhooks.zoho_sign import _resolve_hr_letter
 
-    mock_offer = MagicMock()
-    mock_offer.custom_zoho_sign_request_id = "REQ-X"
-    mock_offer.custom_zoho_sign_signed_at = None
-    patch_frappe.get_doc.return_value = mock_offer
-    patch_frappe.get_roles.return_value = ["System Manager"]
-    patch_frappe.session.user = "test@example.com"
+    patch_frappe.db.get_value.return_value = "HR-LTR-2026-0007"
+    assert _resolve_hr_letter("REQ-7") == "HR-LTR-2026-0007"
+    patch_frappe.db.get_value.assert_called_with(
+        "HR Letter", {"zoho_request_id": "REQ-7"}, "name"
+    )
 
-    from globex_hr_letters.webhooks.zoho_sign import force_complete_offer
-    result = force_complete_offer("HR-OFF-X")
-
-    assert isinstance(result, dict)
-    for key in ("status", "offer_name", "request_id", "signed_pdf_enqueued"):
-        assert key in result, f"missing key: {key}"
-    assert result["status"] == "completed"
-    assert result["offer_name"] == "HR-OFF-X"
+    patch_frappe.db.get_value.return_value = None
+    assert _resolve_hr_letter("REQ-UNKNOWN") == ""
+    assert _resolve_hr_letter("") == ""
