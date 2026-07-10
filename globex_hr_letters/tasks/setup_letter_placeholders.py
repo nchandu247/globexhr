@@ -11,10 +11,10 @@ Frappe HR enforces that:
   - Every Salary Structure Assignment links to a `salary_structure` (used by
     Frappe HR's payroll-slip generation).
 
-Globex runs payroll, leave, and attendance in greytHR — Frappe HR is a
-mirror + letter-generation layer. We don't need the semantic content of
-these fields; we just need the validations to pass so the on_submit hooks
-that trigger Experience / Relieving / Increment letters can fire.
+Globex runs payroll, leave, and attendance in its payroll system — Frappe HR
+here is an employee-records + letter-generation layer. We don't need the
+semantic content of these fields; we just need the validations to pass so
+Employee records save without setup friction.
 
 The clean solution (Option A from the 2026-05-25 design discussion):
 create empty/minimal PLACEHOLDER records and auto-assign them. Frappe HR's
@@ -101,7 +101,7 @@ def setup_letter_placeholders() -> dict:
             comp.round_to_the_nearest_integer = 1
             comp.description = (
                 "Placeholder component for the Letter Trigger Structure. "
-                "greytHR runs actual payroll; do NOT use this for real "
+                "The payroll system runs actual payroll; do NOT use this for real "
                 "salary slips. See tasks/setup_letter_placeholders.py."
             )
             comp.insert(ignore_permissions=True)
@@ -110,7 +110,7 @@ def setup_letter_placeholders() -> dict:
         summary["errors"].append(f"Salary Component create failed: {exc}")
         log_error(
             f"setup_letter_placeholders: Salary Component error: {str(exc)[:300]}",
-            "greytHR Setup Placeholders",
+            "HR Letters Setup Placeholders",
         )
 
     # ── 2. Holiday List "Calendar-Only (No Holidays)" ────────────────────────
@@ -128,7 +128,7 @@ def setup_letter_placeholders() -> dict:
         summary["errors"].append(f"Holiday List create failed: {exc}")
         log_error(
             f"setup_letter_placeholders: Holiday List error: {str(exc)[:300]}",
-            "greytHR Setup Placeholders",
+            "HR Letters Setup Placeholders",
         )
 
     # ── 3. Salary Structure "Letter Trigger Structure" ───────────────────────
@@ -166,7 +166,7 @@ def setup_letter_placeholders() -> dict:
         summary["errors"].append(f"Salary Structure create failed: {exc}")
         log_error(
             f"setup_letter_placeholders: Salary Structure error: {str(exc)[:300]}",
-            "greytHR Setup Placeholders",
+            "HR Letters Setup Placeholders",
         )
 
     # ── 4. Backfill holiday_list on all Employees ────────────────────────────
@@ -195,7 +195,7 @@ def setup_letter_placeholders() -> dict:
             summary["errors"].append(f"Backfill failed: {exc}")
             log_error(
                 f"setup_letter_placeholders: backfill error: {str(exc)[:300]}",
-                "greytHR Setup Placeholders",
+                "HR Letters Setup Placeholders",
             )
 
     log_error(
@@ -206,7 +206,7 @@ def setup_letter_placeholders() -> dict:
         f"backfilled={summary['employees_backfilled']}, "
         f"already_set={summary['employees_already_set']}, "
         f"errors={len(summary['errors'])}",
-        "greytHR Setup Placeholders",
+        "HR Letters Setup Placeholders",
     )
 
     return summary

@@ -18,7 +18,7 @@ def log_info(message: str) -> None:
 
 
 @frappe.whitelist()
-def get_recent_errors(limit: int = 10, filter_title: str = "greytHR") -> list:
+def get_recent_errors(limit: int = 10, filter_title: str = "HR Letters") -> list:
     """
     Browser-accessible endpoint to fetch the last N error log entries.
 

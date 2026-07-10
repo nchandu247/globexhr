@@ -7,16 +7,13 @@ HR-EMP-01010`) bypasses these filters. Treat them as UX filters that keep
 the autocomplete pickers tidy.
 
 Why we use them here:
-  - greytHR sometimes returns records with malformed `employee_number` values
-    (e.g., "Gds0943274" with 10 digits, "GSD0033" with a transposed
-    abbreviation). Our `tasks/rename_employees_to_greythr_id.py` plan_rename
-    categorises those into the `invalid_pattern` bucket and skips them. They
-    still live in Frappe as HR-EMP-#### records, but their identifier is wrong
-    so HR shouldn't pick them when assigning Salary Structure Assignments,
-    setting Reporting To on a Job Offer, etc.
+  - Manually entered Employee records occasionally carry malformed
+    `employee_number` values (e.g., "Gds0943274" with 10 digits, "GSD0033"
+    with a transposed abbreviation). Their identifier is wrong, so HR
+    shouldn't pick them when generating letters or setting links.
   - The cleanest UX fix is to omit them from list / picker results across the
     whole system. HR can still open them via the URL bar after fixing the
-    underlying greytHR data, which is what we want.
+    underlying data, which is what we want.
 """
 
 
@@ -27,11 +24,10 @@ def employee_query_conditions(user: str | None = None) -> str:
     3 to 5 digits — same regex as `plan_rename`).
 
     Allowed:
-      - employee_number IS NULL or empty (manual Frappe-only employees,
-        legitimately have no greytHR ID — e.g., new hires created before
-        greytHR onboarding)
+      - employee_number IS NULL or empty (employees created before a GDS
+        ID is assigned)
       - employee_number matches `^GDS\\d{3,5}$` case-insensitive
-        (greytHR-aligned records)
+        (canonical Globex IDs)
 
     Filtered out:
       - employee_number set to anything else (typos, garbage, mis-formatted)
