@@ -8,6 +8,20 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-11 — Force-migrate patch so deploy syncs fixtures (no SSH)
+
+Fixtures (Letter Types, Client Scripts) weren't loading on the test site
+because Frappe Cloud's "Update Site Pull" skips `bench migrate` when a deploy
+carries no unrun patch — and fixtures only sync during migrate. Rather than
+run migrate over SSH (cert wrangling, short-lived, cost), ship a trivial
+schema patch so the next Deploy runs migrate on its own.
+
+- ✅ New `patches/v1_0/force_fixture_sync.py` — reloads the four HR Letters
+  DocType schemas. Its real job: be a pending patch so FC runs migrate on
+  deploy, letting `sync_fixtures` load the 14 Letter Types + Client Scripts.
+- ✅ Registered in `patches.txt`.
+- Deploy path now deterministic — no SSH, no manual migrate.
+
 ### 2026-07-11 — Install fix: HR Letter controller import path
 
 First install on the test site (`gdshr.m.frappe.cloud`) aborted at 20% with
