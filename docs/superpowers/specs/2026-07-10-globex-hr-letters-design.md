@@ -23,9 +23,11 @@ generic, UI-managed letter catalog plus a shipped library of professional standa
 | 5 | Employee data | Manual entry in Frappe HR; no external sync |
 | 6 | App identity | Full rename: app `globex_hr_letters`, title "Globex HR Letters", module `HR Letters` |
 | 7 | Letter catalog | Generic `Letter Type` doctype — HR adds letter types via UI, no code |
-| 8 | Templates | DOCX upload with `{{placeholders}}`; app ships a prebuilt professional library |
+| 8 | Templates | Dual render engine per Letter Type: shipped library uses HTML + WeasyPrint (pixel-perfect branding, watermark, Zoho text tags); HR-authored custom types use DOCX upload with `{{placeholders}}` (LibreOffice conversion) |
 | 9 | Placeholder data | Hybrid: Employee fields auto-resolve → Settings/letterhead fields → prompt HR for the rest |
 | 10 | Architecture | Approach A: `Letter Type` (master) + `HR Letter` (transaction) |
+| 11 | Recipient | `HR Letter` supports Employee **or** Job Applicant (dynamic link) — offer/appointment letters are issued to candidates before an Employee record exists |
+| 12 | Compensation annexure | Offer/revision letters carry a CTC breakup child table on HR Letter, rendered via template `{% for %}` loop |
 
 ## 3. What is removed vs kept
 
@@ -46,8 +48,12 @@ generic, UI-managed letter catalog plus a shipped library of professional standa
 - `NOTES_greythr_api.md`
 
 ### Kept and renamed (app `greythr_bridge` → `globex_hr_letters`, module `greytHR` → `HR Letters`)
-- `letters/` — `merger.py` (docxtpl), `pdf_convert.py` (LibreOffice), `pdf_check.py`,
-  `dispatch.py`, `non_signing.py` (refactored to serve the generic engine)
+- `letters/` — `merger.py` (both render paths: docxtpl→LibreOffice for DOCX types, and
+  `merge_to_pdf_via_html` HTML→WeasyPrint with `_base.html` letterhead/watermark/brand CSS
+  and embedded Zoho Sign text tags), `pdf_convert.py`, `pdf_check.py`, `dispatch.py`,
+  `non_signing.py` (refactored to serve the generic engine)
+- `templates/letters/html/` — `_base.html`, `_styles.css`, existing letter templates
+  (basis for the shipped library)
 - `api/zoho_sign.py` and `webhooks/zoho_sign.py` — HMAC verification and 5-minute
   timestamp replay protection stay mandatory
 - `tasks/stalled_signings.py` — repointed at `HR Letter` status
@@ -79,7 +85,11 @@ generic, UI-managed letter catalog plus a shipped library of professional standa
 |---|---|---|
 | letter_type_name | Data (unique) | e.g. "Offer Letter" |
 | category | Select | Onboarding / Employment / Compensation / Exit / Disciplinary / Certificate |
-| template | Attach | .docx with `{{placeholders}}` |
+| render_engine | Select | HTML (WeasyPrint) / DOCX (LibreOffice). Shipped library = HTML; HR-created types default to DOCX |
+| html_template | Data | template filename under `templates/letters/html/` (HTML engine only) |
+| template | Attach | .docx with `{{placeholders}}` (DOCX engine only) |
+| recipient_kind | Select | Employee / Job Applicant — which doctype this letter is addressed to |
+| uses_compensation_table | Check | template contains a `{% for row in compensation %}` annexure |
 | requires_signature | Check | on → Zoho Sign flow; off → plain issue with signature image |
 | signatory_source | Select | From Settings / Custom. Custom reveals name, designation and signature-image fields on the Letter Type itself |
 | description | Small Text | purpose and usage guidance |
@@ -88,8 +98,10 @@ generic, UI-managed letter catalog plus a shipped library of professional standa
 ### HR Letter (transaction, submittable)
 | Field | Type | Notes |
 |---|---|---|
-| employee | Link → Employee | required |
+| recipient_type | Select | Employee / Job Applicant (defaulted from Letter Type.recipient_kind) |
+| recipient | Dynamic Link → recipient_type | required; candidate letters link Job Applicant |
 | letter_type | Link → Letter Type | required |
+| compensation | Table (child: HR Letter Compensation Row) | component, monthly_amount, annual_amount; shown only when Letter Type.uses_compensation_table |
 | status | Select | Draft / Generated / Sent for Signature / Signed / Issued / Cancelled |
 | letter_date | Date | date printed on the letter |
 | filled_values | JSON | prompt-collected placeholder values (audit; not logged) |
@@ -104,11 +116,18 @@ generic, UI-managed letter catalog plus a shipped library of professional standa
 
 ```
 HR Letter (Draft) → [Generate]
-  1. Load Letter Type's .docx template
-  2. Scan placeholders (docxtpl get_undeclared_template_variables)
-  3. Resolve in order: Employee fields → HR Letters Settings/letterhead fields
+  1. Load Letter Type template (HTML file or attached .docx per render_engine)
+  2. Scan placeholders (Jinja2 meta for HTML; docxtpl
+     get_undeclared_template_variables for DOCX)
+  3. Resolve in order: recipient doc fields (Employee or Job Applicant)
+     → HR Letters Settings/letterhead fields
+     → compensation child table (when Letter Type.uses_compensation_table)
   4. Unresolved placeholders → dialog prompts HR; values stored in filled_values
-  5. Render (docxtpl) → convert (LibreOffice) → attach PDF → status = Generated
+  5. Render:
+     - HTML engine → WeasyPrint PDF (letterhead/watermark/CSS from _base.html;
+       Zoho text tags embedded when requires_signature)
+     - DOCX engine → docxtpl → LibreOffice PDF
+     → attach PDF → status = Generated
   6a. requires_signature: dispatch via api/zoho_sign.py (frappe.enqueue, queue="default")
       → status = Sent for Signature → Zoho webhook callback → status = Signed,
       signed PDF attached
@@ -116,9 +135,14 @@ HR Letter (Draft) → [Generate]
 ```
 
 Rules:
-- Placeholder namespaces: bare Employee fieldnames (e.g. `{{employee_name}}`,
-  `{{designation}}`) resolve from the Employee doc; `{{company_*}}` resolves from
-  HR Letters Settings; anything else is prompted.
+- Placeholder namespaces: bare recipient fieldnames (e.g. `{{employee_name}}`,
+  `{{applicant_name}}`, `{{designation}}`) resolve from the linked Employee or
+  Job Applicant doc; `{{company_*}}` resolves from HR Letters Settings;
+  `compensation` resolves from the child table; anything else is prompted.
+- Zoho signature-field placement: HTML templates embed invisible text tags
+  (`{{S:R1*}}` etc.) so Zoho auto-creates fields. DOCX signature-required custom
+  types must include the same text tags in the document (documented for HR); the
+  generate step warns if a signature-required DOCX template contains no tag.
 - A placeholder that is neither resolvable nor supplied is a **hard error** — never render
   with silent blanks.
 - Regeneration allowed only in Draft/Generated. After Sent for Signature, use Frappe-native
@@ -132,27 +156,32 @@ Rules:
 
 ## 6. Prebuilt template library
 
-Shipped as fixtures (Letter Type records) plus DOCX files under `templates/letters/`,
-written to standard Indian corporate letter conventions (letterhead, reference number,
-date, subject, salutation, body, signatory block):
+Shipped as fixtures (Letter Type records) plus HTML templates under
+`templates/letters/html/` (extending `_base.html` — letterhead, watermark, brand CSS,
+footer), written to standard Indian corporate letter conventions (letterhead, reference
+number, date, subject, salutation, body, signatory block):
 
-| # | Letter Type | Category | Signature |
-|---|---|---|---|
-| 1 | Offer Letter | Onboarding | Zoho Sign |
-| 2 | Appointment Letter | Onboarding | Zoho Sign |
-| 3 | Confirmation Letter | Employment | plain |
-| 4 | Promotion Letter | Employment | Zoho Sign |
-| 5 | Salary Revision Letter | Compensation | Zoho Sign |
-| 6 | Experience Letter | Exit | plain |
-| 7 | Relieving Letter | Exit | Zoho Sign |
-| 8 | Service Certificate | Certificate | plain |
-| 9 | Warning Letter | Disciplinary | plain |
-| 10 | Termination Letter | Exit | Zoho Sign |
-| 11 | Internship Certificate | Certificate | plain |
-| 12 | Address Proof Letter | Certificate | plain |
+| # | Letter Type | Category | Recipient | Signature | CTC table |
+|---|---|---|---|---|---|
+| 1 | Offer Letter | Onboarding | Job Applicant | Zoho Sign | yes |
+| 2 | Appointment Letter | Onboarding | Job Applicant | Zoho Sign | yes |
+| 3 | Confirmation Letter | Employment | Employee | plain | — |
+| 4 | Promotion Letter | Employment | Employee | Zoho Sign | — |
+| 5 | Salary Revision Letter | Compensation | Employee | Zoho Sign | yes |
+| 6 | Experience Letter | Exit | Employee | plain | — |
+| 7 | Relieving Letter | Exit | Employee | Zoho Sign | — |
+| 8 | Service Certificate | Certificate | Employee | plain | — |
+| 9 | Warning Letter | Disciplinary | Employee | plain | — |
+| 10 | Termination Letter | Exit | Employee | Zoho Sign | — |
+| 11 | Internship Certificate | Certificate | Employee | plain | — |
+| 12 | Address Proof Letter | Certificate | Employee | plain | — |
 
-HR can edit any shipped template (download DOCX, modify, re-upload) or create new
-Letter Types entirely via the UI.
+Offer/Appointment/Salary Revision templates include a compensation annexure page
+(component-wise monthly + annual breakup with gross and CTC totals) rendered from the
+HR Letter compensation child table.
+
+Shipped templates are HTML (pixel-perfect output; edited by developers). HR creates or
+customizes additional letter types via DOCX upload entirely in the UI.
 
 ## 7. Workspace and UX
 
@@ -160,15 +189,19 @@ Letter Types entirely via the UI.
   convention required in Frappe v16 — not a fixture, to avoid the orphan-Workspace purge).
 - Shortcuts: New HR Letter, HR Letters list, Letter Types, HR Letters Settings.
 - Employee form button "Generate Letter" (Client Script) → opens new HR Letter with
-  employee prefilled.
+  recipient prefilled. Same button on Job Applicant form for candidate letters
+  (offer/appointment).
 
 ## 8. Testing
 
 - Framework unchanged: pytest + `responses`, fully offline, existing CI workflow.
 - Surviving tests: Zoho Sign client, webhook (HMAC/timestamp), letters render/convert.
-- New tests: placeholder scanning + resolution order (Employee → Settings → prompt),
-  hard-error on unresolved placeholder, HR Letter status lifecycle, signature vs plain
-  dispatch paths, stalled-signings against HR Letter.
+- New tests: placeholder scanning + resolution order (recipient → Settings →
+  compensation → prompt), hard-error on unresolved placeholder, HR Letter status
+  lifecycle, signature vs plain dispatch paths, both render engines (HTML/WeasyPrint and
+  DOCX/LibreOffice), Job Applicant recipient resolution, compensation-table rendering
+  with totals, missing-Zoho-tag warning for signature-required DOCX types,
+  stalled-signings against HR Letter.
 - Deleted: all greytHR API/mapper/sync tests.
 
 ## 9. Migration / rollout
