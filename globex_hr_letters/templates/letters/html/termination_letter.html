@@ -1,0 +1,72 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Termination Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ letter_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ employee_name }},</p>
+
+<div class="section">
+  <p>
+    This letter is to formally notify you that your employment with
+    Globex Digital Solutions Pvt Ltd as <strong>{{ designation }}</strong>
+    stands terminated with effect from <strong>{{ termination_date }}</strong>,
+    for the following reason:
+  </p>
+
+  <p class="notes"><strong>{{ termination_reason }}</strong></p>
+
+  <p>
+    This decision has been taken after due consideration and in accordance
+    with the terms of your appointment letter and the Company's policies.
+    Your final settlement — including salary up to your last working day and
+    any other dues, less applicable deductions and recoveries — will be
+    processed as per Company policy and communicated to you separately.
+  </p>
+
+  <p>
+    You are required to return all Company property in your possession,
+    including laptops, access cards, documents, and any confidential material,
+    on or before your last working day. Your obligations regarding
+    confidentiality and intellectual property survive the termination of your
+    employment.
+  </p>
+
+  <p>
+    We thank you for your services and wish you the best in your future
+    endeavours.
+  </p>
+</div>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">{{ signatory_name }}<br>Authorised Signatory</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ employee_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Acknowledged &amp; Received</span>
+    </div>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries regarding your settlement, please contact
+  <strong>hr@globexdigital.ai</strong> or call <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

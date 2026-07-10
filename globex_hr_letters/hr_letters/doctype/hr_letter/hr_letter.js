@@ -59,11 +59,12 @@ function generate_letter(frm) {
 		if (!missing.length) {
 			return run_generate(frm, {});
 		}
+		// Not reqd: an intentionally blank value still counts as "provided",
+		// so optional template vars ({% if notes %}) can be left empty.
 		const fields = missing.map((name) => ({
 			fieldname: name,
 			fieldtype: "Data",
 			label: frappe.model.unscrub(name),
-			reqd: 1,
 		}));
 		const d = new frappe.ui.Dialog({
 			title: __("Fill Letter Details"),

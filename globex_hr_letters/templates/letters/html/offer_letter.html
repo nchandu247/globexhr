@@ -6,7 +6,7 @@
 
 <div class="doc-header">
   <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
-  <span class="date">{{ offer_date }}</span>
+  <span class="date">{{ letter_date }}</span>
 </div>
 
 <p class="salutation">Dear {% if title %}{{ title }} {% endif %}{{ candidate_name }},</p>
@@ -184,7 +184,7 @@
     <tr><th>Employee:</th>            <td>{{ candidate_name }}</td></tr>
     <tr><th>Band / Designation:</th>  <td>{{ band }}{% if band %} — {% endif %}{{ designation }}</td></tr>
     <tr><th>Effective Date:</th>      <td>{{ date_of_joining }}</td></tr>
-    <tr><th>Issue Date:</th>          <td>{{ offer_date }}</td></tr>
+    <tr><th>Issue Date:</th>          <td>{{ letter_date }}</td></tr>
   </table>
 </div>
 
@@ -197,34 +197,12 @@
     </tr>
   </thead>
   <tbody>
-    <tr class="section-header"><td colspan="3">Earnings</td></tr>
-    <tr><td>Basic</td><td class="numeric">{{ basic_monthly }}</td><td class="numeric">{{ basic_annual }}</td></tr>
-    <tr><td>HRA</td><td class="numeric">{{ hra_monthly }}</td><td class="numeric">{{ hra_annual }}</td></tr>
-    <tr><td>Conveyance Allowance</td><td class="numeric">{{ conveyance_monthly }}</td><td class="numeric">{{ conveyance_annual }}</td></tr>
-    <tr><td>Medical Allowance</td><td class="numeric">{{ medical_allowance_monthly }}</td><td class="numeric">{{ medical_allowance_annual }}</td></tr>
-    <tr><td>Special Allowance</td><td class="numeric">{{ special_allowance_monthly }}</td><td class="numeric">{{ special_allowance_annual }}</td></tr>
-    <tr class="subtotal"><td>Total Earnings (A)</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
-
-    <tr class="section-header"><td colspan="3">Employee Deductions</td></tr>
-    <tr><td>Provident Fund</td><td class="numeric">{{ employee_pf_monthly }}</td><td class="numeric">{{ employee_pf_annual }}</td></tr>
-    {% if not esi_applies %}
-    {% else %}
-    <tr><td>ESI / Medical Benefits</td><td class="numeric">{{ employee_esi_monthly }}</td><td class="numeric">{{ employee_esi_annual }}</td></tr>
-    {% endif %}
-    <tr><td>Professional Tax</td><td class="numeric">{{ professional_tax_monthly }}</td><td class="numeric">{{ professional_tax_annual }}</td></tr>
-    <tr class="subtotal"><td>Total Deductions (B)</td><td class="numeric">{{ total_deductions_monthly }}</td><td class="numeric">{{ total_deductions_annual }}</td></tr>
-
-    <tr class="section-header"><td colspan="3">Employer Contributions</td></tr>
-    <tr><td>Provident Fund + EDLI + Admin</td><td class="numeric">{{ employer_pf_monthly }}</td><td class="numeric">{{ employer_pf_annual }}</td></tr>
-    {% if esi_applies %}
-    <tr><td>ESI / Medical &amp; Insurance Benefits</td><td class="numeric">{{ employer_esi_monthly }}</td><td class="numeric">{{ employer_esi_annual }}</td></tr>
-    {% elif not medical_opted_out %}
-    <tr><td>Medical Insurance (Employer)</td><td class="numeric">{{ medical_insurance_monthly }}</td><td class="numeric">{{ medical_insurance_annual }}</td></tr>
-    {% endif %}
-    <tr class="subtotal"><td>Total Employer Contributions (C)</td><td class="numeric">&nbsp;</td><td class="numeric">{{ employer_deductions_annual }}</td></tr>
-
-    <tr class="subtotal"><td>Net Salary (A − B)</td><td class="numeric">{{ net_take_home }}</td><td class="numeric">{{ net_take_home_annual }}</td></tr>
-    <tr class="total"><td>Annual CTC (A + C)</td><td class="numeric">&nbsp;</td><td class="numeric">{{ annual_ctc }}</td></tr>
+    <tr class="section-header"><td colspan="3">Compensation</td></tr>
+    {% for row in compensation %}
+    <tr><td>{{ row.component }}</td><td class="numeric">{{ row.monthly }}</td><td class="numeric">{{ row.annual }}</td></tr>
+    {% endfor %}
+    <tr class="subtotal"><td>Gross Total</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
+    <tr class="total"><td>Annual CTC</td><td class="numeric">&nbsp;</td><td class="numeric">{{ annual_ctc }}</td></tr>
   </tbody>
 </table>
 
@@ -259,7 +237,7 @@
     </div>
     <div class="signer-line">
       <span class="signer-label">Authorised Signatory</span><br>
-      <span class="muted">Date: {{ offer_date }}</span>
+      <span class="muted">Date: {{ letter_date }}</span>
     </div>
   </div>
   <div class="signer">

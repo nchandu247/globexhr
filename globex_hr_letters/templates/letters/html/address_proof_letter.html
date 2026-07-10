@@ -1,0 +1,48 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Employment &amp; Address Confirmation</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">To Whom It May Concern,</p>
+
+<div class="section">
+  <p>
+    This is to certify that <strong>{{ employee_name }}</strong>
+    (Employee ID: <strong>{{ employee_id }}</strong>) is employed with
+    Globex Digital Solutions Pvt Ltd as <strong>{{ designation }}</strong>
+    since <strong>{{ date_of_joining }}</strong>.
+  </p>
+
+  <p>
+    As per our records, the employee's current residential address is:
+  </p>
+
+  <p class="notes"><strong>{{ residential_address }}</strong></p>
+
+  <p>
+    This letter is issued at the request of the employee for the purpose of
+    <strong>{{ purpose }}</strong> and does not constitute any guarantee or
+    liability on the part of the Company.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For verification of this letter, please contact
+  <strong>hr@globexdigital.ai</strong> or call <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

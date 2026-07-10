@@ -22,9 +22,9 @@
     {% if designation %}{{ employee_name }} currently holds the position of
     <strong>{{ designation }}</strong>
     {% if tenure_so_far %}and has been associated with the company for
-    <strong>{{ tenure_so_far }}</strong>{% endif %}.
+    <strong>{{ tenure }}</strong>{% endif %}.
     {% elif tenure_so_far %}{{ employee_name }} has been associated with the
-    company for <strong>{{ tenure_so_far }}</strong>.
+    company for <strong>{{ tenure }}</strong>.
     {% else %}{{ employee_name }} is currently employed with the organisation.
     {% endif %}
   </p>

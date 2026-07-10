@@ -169,6 +169,7 @@ def _recipient_context(recipient_type: str, doc) -> dict:
     # Curated conveniences on top of raw fields
     if recipient_type == "Employee":
         display_name = format_person_name(doc.get("employee_name") or doc.get("first_name"))
+        context["employee_id"] = doc.name
         context["employee_name"] = display_name
         context["recipient_name"] = display_name
         context["designation"] = format_person_name(doc.get("designation") or "")

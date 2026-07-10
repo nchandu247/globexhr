@@ -1,0 +1,122 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Appointment Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ letter_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ candidate_name }},</p>
+
+<div class="section">
+  <p>
+    Further to your acceptance of our offer, we are pleased to appoint you as
+    <strong>{{ designation }}</strong> at Globex Digital Solutions Pvt Ltd
+    (hereinafter &ldquo;the Company&rdquo;), effective
+    <strong>{{ date_of_joining }}</strong>. Your place of posting will be
+    <strong>{{ work_location }}</strong>; the Company may transfer you to any
+    of its offices, projects, or client locations based on business needs.
+  </p>
+
+  <p>
+    Your annual cost to company will be <strong>&#8377; {{ annual_ctc }}</strong>,
+    payable as per the Company's standard payroll schedule. The component-wise
+    breakup is set out in Annexure A. Compensation is governed by Company
+    policy and applicable statutory requirements and will be reviewed as per
+    the Company's appraisal cycle.
+  </p>
+
+  <p>
+    You will be on probation for a period of <strong>{{ probation_period }}</strong>
+    from your date of joining. On successful completion, your employment will be
+    confirmed in writing. During probation, either party may terminate this
+    appointment with notice as per Company policy. After confirmation, either
+    party may terminate employment by providing written notice of
+    <strong>{{ notice_period }}</strong>.
+  </p>
+
+  <p>
+    You will be governed by the Company's rules, regulations, code of conduct,
+    and policies as amended from time to time. You are required to maintain
+    strict confidentiality of all Company and client information, both during
+    and after your employment. You shall not engage in any other employment,
+    consulting, or business activity that conflicts with the interests of the
+    Company.
+  </p>
+
+  <p>
+    This appointment is contingent on the satisfactory verification of your
+    character, antecedents, previous employment, and educational qualifications.
+    If any information provided by you is found to be incorrect, suppressed, or
+    false, the Company reserves the right to terminate your employment
+    immediately.
+  </p>
+
+  <p>
+    Please sign and return a copy of this letter as a token of your acceptance
+    of the terms and conditions stated herein. We welcome you to the Globex
+    family and look forward to a long and mutually rewarding association.
+  </p>
+</div>
+
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">{{ signatory_name }}<br>Authorised Signatory</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ candidate_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Employee Signature</span>
+    </div>
+  </div>
+</div>
+
+{# ── Annexure A: Salary Breakup ──────────────────────────────────────────── #}
+<h2 class="break-before">Annexure A — Salary Breakup</h2>
+
+<div class="salary-meta">
+  <table class="salary-meta-table">
+    <tr><th>Employee:</th>       <td>{{ candidate_name }}</td></tr>
+    <tr><th>Designation:</th>    <td>{{ designation }}</td></tr>
+    <tr><th>Effective Date:</th> <td>{{ date_of_joining }}</td></tr>
+    <tr><th>Issue Date:</th>     <td>{{ letter_date }}</td></tr>
+  </table>
+</div>
+
+<table class="salary-breakup">
+  <thead>
+    <tr>
+      <th>Salary Component</th>
+      <th class="numeric">Monthly (&#8377;)</th>
+      <th class="numeric">Annually (&#8377;)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="section-header"><td colspan="3">Compensation</td></tr>
+    {% for row in compensation %}
+    <tr><td>{{ row.component }}</td><td class="numeric">{{ row.monthly }}</td><td class="numeric">{{ row.annual }}</td></tr>
+    {% endfor %}
+    <tr class="subtotal"><td>Gross Total</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
+    <tr class="total"><td>Annual CTC</td><td class="numeric">&nbsp;</td><td class="numeric">{{ annual_ctc }}</td></tr>
+  </tbody>
+</table>
+
+<p class="hr-contact">
+  For any queries regarding this appointment, please contact
+  <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

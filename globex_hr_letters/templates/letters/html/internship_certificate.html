@@ -1,0 +1,49 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Internship Certificate</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ current_date }}</span>
+</div>
+
+<p class="salutation">To Whom It May Concern,</p>
+
+<div class="section">
+  <p>
+    This is to certify that <strong>{{ employee_name }}</strong> has
+    successfully completed an internship with Globex Digital Solutions Pvt Ltd
+    from <strong>{{ internship_start_date }}</strong> to
+    <strong>{{ internship_end_date }}</strong> in the capacity of
+    <strong>{{ designation }}</strong>.
+  </p>
+
+  <p>
+    During the internship, {{ employee_name }} worked on
+    <strong>{{ project_area }}</strong> and demonstrated sincerity,
+    professionalism, and a strong willingness to learn. Their contribution
+    to the team's work was appreciated.
+  </p>
+
+  <p>
+    We wish {{ employee_name }} great success in all future academic and
+    professional endeavours.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For verification of this certificate, please contact
+  <strong>hr@globexdigital.ai</strong> or call <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

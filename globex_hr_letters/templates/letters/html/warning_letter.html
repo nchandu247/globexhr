@@ -1,0 +1,57 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Warning Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ letter_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ employee_name }},</p>
+
+<div class="section">
+  <p>
+    This letter serves as a formal warning regarding the following conduct /
+    performance concern observed on or around <strong>{{ incident_date }}</strong>:
+  </p>
+
+  <p class="notes"><strong>{{ warning_reason }}</strong></p>
+
+  <p>
+    This conduct is in violation of the Company's code of conduct and
+    policies. You are hereby advised to rectify the above with immediate
+    effect. Please treat this letter as a serious reminder of the standards of
+    behaviour and performance expected of every employee of Globex Digital
+    Solutions Pvt Ltd.
+  </p>
+
+  <p>
+    Kindly note that any repetition of such conduct, or failure to show
+    improvement, may result in further disciplinary action, up to and
+    including termination of employment.
+  </p>
+
+  <p>
+    If you wish to provide an explanation or discuss this matter, please
+    contact the HR team or your reporting manager within seven days of
+    receiving this letter. A copy of this letter will be placed in your
+    personnel file.
+  </p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries, please contact <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}

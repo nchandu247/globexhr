@@ -6,7 +6,7 @@
 
 <div class="doc-header">
   <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
-  <span class="date">{{ offer_date }}</span>
+  <span class="date">{{ letter_date }}</span>
 </div>
 
 <p class="salutation">Dear {% if title %}{{ title }} {% endif %}{{ candidate_name }},</p>
@@ -89,7 +89,7 @@
     </div>
     <div class="signer-line">
       <span class="signer-label">Authorised Signatory</span><br>
-      <span class="muted">Date: {{ offer_date }}</span>
+      <span class="muted">Date: {{ letter_date }}</span>
     </div>
   </div>
   <div class="signer">

@@ -1,0 +1,51 @@
+{% extends "_base.html" %}
+
+{% block body %}
+
+<h1>Confirmation Letter</h1>
+
+<div class="doc-header">
+  <span class="ref"><strong>Ref No.</strong> {{ ref_number }}</span>
+  <span class="date">{{ letter_date }}</span>
+</div>
+
+<p class="salutation">Dear {{ employee_name }},</p>
+
+<div class="section">
+  <p>
+    We are pleased to inform you that, on successful completion of your
+    probation period, your employment with Globex Digital Solutions Pvt Ltd
+    stands <strong>confirmed</strong> with effect from
+    <strong>{{ effective_date }}</strong>.
+  </p>
+
+  <p>
+    You will continue in your role as <strong>{{ designation }}</strong>.
+    All other terms and conditions of your appointment letter remain
+    unchanged, and you continue to be governed by the Company's rules,
+    regulations, and policies as amended from time to time.
+  </p>
+
+  <p>
+    We take this opportunity to thank you for your contribution during the
+    probation period and look forward to your continued commitment and
+    association with the Company.
+  </p>
+
+  <p>Congratulations, and best wishes for the journey ahead.</p>
+</div>
+
+<div class="hr-sig-block">
+  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  <div class="hr-sig-line">
+    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+  </div>
+</div>
+
+<p class="hr-contact">
+  For any queries, please contact <strong>hr@globexdigital.ai</strong> or call
+  <strong>040-3551&nbsp;1959</strong>.
+</p>
+
+{% endblock %}
