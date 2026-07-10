@@ -35,14 +35,7 @@ fixtures = [
 # Scheduled jobs
 scheduler_events = {
     "cron": {
-        # Daily at 6 AM IST (00:30 UTC). Was every 15 min — reduced 96× because
-        # greytHR data rarely changes between morning syncs. HR can force a
-        # fresh sync any time via the "Sync from greytHR Now" workspace card
-        # (calls greythr_bridge.tasks.pull_employees.run_now).
-        "0 6 * * *":  ["greythr_bridge.tasks.pull_employees.run"],            # Phase 2
-        "0 20 * * *": ["greythr_bridge.tasks.pull_salary_structures.run"],    # Phase 3
-        "0 21 * * *": ["greythr_bridge.tasks.stalled_signings.run"],          # Phase 5
-        # "0 22 * * *": ["greythr_bridge.tasks.reconcile_drift.run"],         # Phase 5
+        "0 21 * * *": ["greythr_bridge.tasks.stalled_signings.run"],
     }
 }
 
@@ -57,22 +50,9 @@ permission_query_conditions = {
 
 # Document event handlers
 doc_events = {
-    "Job Offer": {
-        "on_submit": "greythr_bridge.hooks_handlers.job_offer.on_offer_submitted",
-    },
-    # Phase B — auto-trigger letters on source-doc submit
-    "Salary Structure Assignment": {
-        "on_submit": "greythr_bridge.hooks_handlers.salary_structure_assignment.on_ssa_submitted",
-    },
-    "Employee Separation": {
-        "on_submit": "greythr_bridge.hooks_handlers.employee_separation.on_separation_submitted",
-    },
-    # Employee naming: use greytHR's employee_number as the Frappe primary key
-    # so HR sees matching IDs across both systems. Falls back to default
-    # naming series (HR-EMP-####) when employee_number is empty.
+    # Employee naming: use employee_number as the Frappe primary key when
+    # present. Falls back to default naming series (HR-EMP-####) when empty.
     "Employee": {
         "before_insert": "greythr_bridge.hooks_handlers.employee.set_name_from_greythr_id",
     },
-    # Promotion + Service Certificate are MANUAL buttons (Client Scripts in
-    # fixtures/client_script.json), not auto-triggered — no doc_event needed.
 }
