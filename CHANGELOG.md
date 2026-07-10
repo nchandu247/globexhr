@@ -27,6 +27,18 @@ imported the controller modules.
   be a base class).
 - ✅ Test suite: **76 passing** (was 71).
 
+**Round 2 (same day):** install then succeeded but fixture sync skipped
+`letter_type.json` with the same missing-module error — `letter_type.py`
+had the identical triple-dot import *inside* `_validate_template()`, which
+the module-import sweep can't see (function bodies run at call time, when
+the fixture loader validates each Letter Type).
+
+- ✅ Fix: absolute import in `letter_type.py` too.
+- ✅ New static test `test_no_triple_dot_relative_imports` — scans every
+  non-test `.py` in the app and bans `from ...` outright, catching
+  function-level occurrences.
+- ✅ Test suite: **77 passing**.
+
 ### 2026-07-11 — Standalone pivot: globex_hr_letters
 
 - ✅ **Pivot (spec 2026-07-10):** removed the entire greytHR integration

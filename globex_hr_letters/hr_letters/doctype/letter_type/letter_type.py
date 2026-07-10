@@ -17,7 +17,7 @@ class LetterType(Document):
         if self.render_engine == "HTML":
             if not self.html_template:
                 frappe.throw("HTML Template File is required for the HTML render engine.")
-            from ...letters.merger import html_template_exists
+            from globex_hr_letters.letters.merger import html_template_exists
             if not html_template_exists(self.html_template):
                 frappe.throw(
                     f"HTML template not found: {self.html_template}. "
