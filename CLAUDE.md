@@ -1,48 +1,51 @@
-# CLAUDE.md — Coding Conventions for greythr_bridge
+# CLAUDE.md — Coding Conventions for globex_hr_letters
 
 > Read this file at the start of every Claude Code session. Read `PLAN.md` for full context. Check `CHANGELOG.md` to see what's last been done.
 
-This is a Frappe custom app (Globex Digital Solutions Pvt Ltd) that integrates Frappe HR (running on Frappe Cloud) with greytHR Cloud (HR/Payroll vendor). Frappe HR is the application HR uses; greytHR remains the system of record for employee master, payroll, and statutory data.
+This is a Frappe custom app (Globex Digital Solutions Pvt Ltd) — a standalone **HR letters generation application** running alongside Frappe HR on Frappe Cloud. HR manages a Letter Type catalog, generates letters for Employees or Job Applicants (candidates), and routes signature letters through Zoho Sign. There is **no external HR/payroll integration** — Employee data is entered manually in Frappe HR.
+
+Design source of truth: `docs/superpowers/specs/2026-07-10-globex-hr-letters-design.md`.
 
 ---
 
 ## Hard rules — never break these
 
-1. **Never modify Frappe HR or Frappe Framework core.** All extensions live in `greythr_bridge`. If a customization seems to need core changes, stop and use a hook/fixture/custom field instead.
-2. **All greytHR API calls go through `greythr_bridge.api.client.GreytHRClient`.** Never call `requests.get(...)` to greytHR from anywhere else.
-3. **All Zoho Sign API calls go through `greythr_bridge.api.zoho_sign`.** Never call the Zoho Sign REST API directly from tasks, hooks, or webhooks.
-4. **All credentials live in the `greytHR Settings` single DocType** with `Password` fields (encrypted at rest). Never hardcode `client_id`, `client_secret`, `zoho_api_key`, `zoho_sign_webhook_secret`, or any secret in source. Never read secrets from `frappe.conf` or environment variables.
-5. **All sync operations are idempotent.** Running them twice produces the same result. Use Frappe document name as the idempotency key.
-6. **All async work goes through `frappe.enqueue` with the correct queue type.**
+1. **Never modify Frappe HR or Frappe Framework core.** All extensions live in `globex_hr_letters`. If a customization seems to need core changes, stop and use a hook/fixture/custom field instead.
+2. **All Zoho Sign API calls go through `globex_hr_letters.api.zoho_sign`.** Never call the Zoho Sign REST API directly from tasks, hooks, webhooks, or the engine.
+3. **All credentials live in the `HR Letters Settings` single DocType** with `Password` fields (encrypted at rest). Never hardcode secrets in source. Never read secrets from `frappe.conf` or environment variables.
+4. **All letter operations are idempotent.** The HR Letter document name is the idempotency key. `dispatch_signature` skips when `zoho_request_id` is already set — keep that pattern.
+5. **All async work goes through `frappe.enqueue` with the correct queue type.**
    - `queue="short"` — webhook-triggered jobs (must start within seconds)
-   - `queue="long"` — bulk sync jobs (pull_employees, pull_salary)
-   - `queue="default"` — everything else
+   - `queue="default"` — signature dispatch, email delivery, everything else
    HTTP webhook handlers must return within 5 seconds. Never block a webhook with synchronous work.
-7. **All errors go through `frappe.log_error(message, title)`.** Never use `print()` or bare `pass` on exceptions. Log IDs and timestamps only — never log full employee records, candidate PII (name, email, mobile, Aadhaar, PAN), PDFs, tokens, or webhook payloads. This is both hygiene and a DPDP Act compliance requirement.
-8. **Custom DocTypes start with `greytHR`** (e.g. `greytHR Settings`, `greytHR Sync Log`, `greytHR Employee Mapping`).
-9. **Custom fields on Frappe HR DocTypes start with `custom_`** (e.g. `custom_greythr_employee_id`).
-10. **Every function that calls greytHR or Zoho Sign has a unit test.** Use the `responses` library to mock HTTP. Tests must run offline in CI.
-11. **Every commit batch updates `CHANGELOG.md`.**
-12. **All greytHR HTTP calls are rate-limited to 10 req/sec** via `@rate_limited` in `GreytHRClient._request()`. Never call greytHR in a tight loop outside the client.
-13. **`on_status_change` does not exist in Frappe.** To react to an Employee status change, use `on_update` and compare `doc.status` vs `doc.get_doc_before_save().status`. Never register `on_status_change` in `hooks.py` — it will silently never fire.
+6. **All errors go through `frappe.log_error(message, title)`** (or `utils/logging.log_error`). Never use `print()` or bare `pass` on exceptions. Log document names, IDs, and operation names only — never recipient names, emails, mobile numbers, placeholder values, PDFs, tokens, or webhook payloads. DPDP Act compliance requirement.
+7. **Never render a letter with silent blanks.** An unresolved placeholder is a hard error listing the missing names. The prompt dialog exists for exactly this.
+8. **Custom DocTypes live in the `HR Letters` module** (`Letter Type`, `HR Letter`, `HR Letter Compensation Row`, `HR Letters Settings`).
+9. **Every function that calls Zoho Sign has a unit test.** Use the `responses` library to mock HTTP. Tests must run offline in CI (`frappe` is mocked in `tests/conftest.py`).
+10. **Every commit batch updates `CHANGELOG.md`.**
+11. **Zoho Sign webhook security is not negotiable:** HMAC-SHA256 verification + 5-minute timestamp replay window, from day one, no "for now" exceptions.
+12. **`on_status_change` does not exist in Frappe.** To react to a status change, use `on_update` and compare `doc.status` vs `doc.get_doc_before_save().status`.
+13. **Never delete Employee records** or bulk-modify them destructively — at any project stage. Non-destructive mitigations only.
 
 ---
 
 ## File map
 
 ```
-api/             — HTTP wrappers, exceptions, retry. GreytHRClient + zoho_sign live here.
-mappers/         — Convert between greytHR JSON and Frappe records (no I/O).
-tasks/           — Scheduled + enqueued jobs (pull_employees, pull_salary, push_*, reconcile).
-hooks_handlers/  — Document event handlers (Job Offer on_submit, etc.). NOT hooks.py.
-webhooks/        — Incoming webhooks (Zoho Sign callback). All @frappe.whitelist(allow_guest=True).
-doctype/         — Frappe DocType definitions (greytHR Settings, Sync Log, Mapping).
-fixtures/        — Exported custom fields and Print Formats (auto-loaded on install).
-utils/           — retry decorator, rate_limiter, idempotency helpers, logging wrappers.
-tests/           — pytest tests with mocked HTTP. One test file per module.
+api/             — zoho_sign.py (all Zoho Sign HTTP), exceptions.
+letters/         — engine.py (placeholder resolution + generation flow),
+                   merger.py (render primitives: HTML/WeasyPrint + DOCX/docxtpl),
+                   delivery.py (attach + email), pdf_convert.py, pdf_check.py.
+hr_letters/      — module folder: doctype/ (Letter Type, HR Letter, Compensation
+                   Row, Settings) and workspace/ (v16 per-module convention).
+hooks_handlers/  — Document event handlers (Employee naming). NOT hooks.py.
+webhooks/        — Zoho Sign callback. @frappe.whitelist(allow_guest=True).
+tasks/           — stalled_signings (daily cron), setup_letter_placeholders.
+templates/letters/html/ — shipped HTML template library (_base.html + letters).
+fixtures/        — letter_type.json (shipped catalog), client_script.json.
+utils/           — retry, idempotency, logging wrappers, permissions.
+tests/           — pytest, offline, frappe mocked in conftest.py.
 ```
-
----
 
 ## Where things wire up
 
@@ -50,128 +53,66 @@ tests/           — pytest tests with mocked HTTP. One test file per module.
 |---|---|
 | Scheduled jobs | `hooks.py` → `scheduler_events` |
 | Document event handlers | `hooks.py` → `doc_events` |
-| Custom fields on core DocTypes | `fixtures/custom_field.json` (auto-loaded) |
-| Custom Print Formats | `fixtures/print_format.json` (auto-loaded) |
-| Webhook URLs | `/api/method/greythr_bridge.webhooks.<name>.callback` |
-| Secrets | `greytHR Settings` DocType (NEVER in source, NEVER in `frappe.conf`) |
-| App version | `greythr_bridge/__init__.py` → `__version__` |
+| Shipped Letter Types | `fixtures/letter_type.json` (auto-loaded) |
+| Generate Letter buttons | `fixtures/client_script.json` (Employee, Job Applicant) |
+| HR Letter form buttons | `hr_letters/doctype/hr_letter/hr_letter.js` |
+| Webhook URL | `/api/method/globex_hr_letters.webhooks.zoho_sign.callback` |
+| Secrets + letterhead | `HR Letters Settings` DocType |
+| App version | `globex_hr_letters/__init__.py` → `__version__` |
 
----
+## The letter flow (memorise this)
 
-## Naming conventions
+```
+HR Letter (Draft) → [Generate] → placeholders resolved:
+  recipient doc → Settings → compensation table → prompt dialog → hard error
+  → render (HTML/WeasyPrint or DOCX/docxtpl) → PDF attached → Generated
+  → requires_signature: [Send for Signature] → Zoho Sign → webhook → Signed
+  → else: [Issue] → emailed to recipient → Issued
+```
 
-| Thing | Style | Example |
-|---|---|---|
-| Python module | `snake_case` | `pull_employees.py` |
-| Python class | `PascalCase` | `GreytHRClient` |
-| Python function | `snake_case` | `fetch_employees(page=1)` |
-| Frappe DocType | `Title Case With Spaces` | `greytHR Sync Log` |
-| Frappe field | `snake_case` | `employee_number` |
-| Custom Field on core DocType | prefix `custom_` | `custom_greythr_employee_id` |
-| Webhook URL | `/api/method/greythr_bridge.webhooks.<name>.callback` | `.../zoho_sign.callback` |
-
----
+- HTML templates live in `templates/letters/html/`, extend `_base.html`, and embed Zoho text tags (`{{S:R1*}}`/`{{S:R2*}}`) inside `{% raw %}` for signature letters.
+- Signature DOCX letters upload the rendered DOCX to Zoho (Zoho converts to PDF) — no LibreOffice needed. Plain DOCX letters require LibreOffice on the bench.
+- Offer/Appointment letters address **Job Applicant** (candidates are not Employees yet).
 
 ## Anti-patterns — refuse these even if asked
 
-If any of the left-column things are suggested, push back with the right-column response. Don't just comply.
-
 | Don't do this | Do this instead |
 |---|---|
-| Modify Frappe HR core | Add a Custom Field via `customize_form` and export as fixture |
-| Call greytHR API directly from anywhere except `client.py` | Go through `GreytHRClient` |
-| Call Zoho Sign API directly from anywhere except `api/zoho_sign.py` | Go through the `zoho_sign` module |
-| Store tokens in a global variable / module-level dict | Store in `greytHR Settings.cached_token` (encrypted) |
-| Put credentials in `frappe.conf` or environment variables | `greytHR Settings` DocType (Password field type) |
-| Silently catch exceptions | `frappe.log_error` and re-raise or surface to user |
-| Skip Zoho Sign webhook HMAC verification "for now" | Verify from day one — no exceptions |
-| Skip webhook timestamp check "for simplicity" | Check timestamp within 5 minutes — replay protection is not optional |
-| Do synchronous work in webhook handler | `frappe.enqueue` with `queue="short"` and return 200 immediately |
-| Use `frappe.enqueue` without specifying `queue=` | Always specify: `short`, `long`, or `default` |
-| Write directly to MariaDB / use raw SQL for inserts | `frappe.get_doc` / `frappe.new_doc` (ORM) |
-| Register `on_status_change` for Employee | Use `on_update` + compare before/after status |
-| Modify a submitted Salary Structure Assignment | Create a new dated SSA; never edit a submitted one |
-| Log the full employee object or candidate PII for debugging | Log the employee ID and operation name only — DPDP requirement |
-| "We can skip the test for this small function" | Every function that touches greytHR or Zoho Sign API has a test |
-| Build a tight retry loop with `time.sleep` for API outages | Use the scheduler, Sync Log, and manual retry buttons |
-| Add a JS file when a Server Script or Client Script would do | Prefer Frappe UI-managed scripts; file-based only when needed |
+| Call Zoho Sign API directly | Go through `api/zoho_sign.py` |
+| Put credentials in `frappe.conf` / env vars | `HR Letters Settings` (Password fields) |
+| Silently catch exceptions | `frappe.log_error` and re-raise or surface |
+| Skip webhook HMAC / timestamp check | Both mandatory, no exceptions |
+| Synchronous work in webhook handler | `frappe.enqueue(queue="short")`, return 200 |
+| `frappe.enqueue` without `queue=` | Always specify |
+| Raw SQL inserts | `frappe.get_doc` / `frappe.new_doc` (ORM) |
+| Render with a blank placeholder | Hard error + prompt dialog |
+| Hardcode a letter type in code | Add a Letter Type record + template |
+| Log recipient PII / placeholder values | Document names + operation names only |
+| Skip tests for Zoho-touching code | `responses`-mocked test, offline |
+| Delete Employee records | Never — hard rule |
 
----
-
-## When implementing a new feature
-
-Default checklist for any new task — go through these in order:
-
-1. **Re-read the relevant section of `PLAN.md`** (Section 5 has all phases with detailed tasks)
-2. **Check if a DocType field needs to be added.** If yes, add via "Customize Form" UI first, then export as fixture
-3. **Write the function signature and docstring first.** No body yet.
-4. **Write the test that proves it works** (with mocked HTTP if it touches greytHR or Zoho Sign)
-5. **Implement the function** to make the test pass
-6. **Verify manually** with the bench-callable command pattern (see Phase 1 spec)
-7. **Update `CHANGELOG.md`** with one line describing what changed
-8. **Commit** with a message that references the phase and task number (e.g. "Phase 2.5: implement pull_employees task")
-
----
-
-## Useful bench commands during development
+## Useful bench commands
 
 ```bash
-# Run a quick Python function on the site (great for smoke tests)
-bench --site hr-globexdigital execute greythr_bridge.api.client.test_connection
+# Health check for the render pipeline
+bench --site hr-globexdigital execute globex_hr_letters.letters.merger.health_check
 
-# Run all tests for this app
-bench --site hr-globexdigital run-tests --app greythr_bridge
+# Run all app tests (CI runs plain pytest — frappe is mocked)
+pytest globex_hr_letters/tests/ -v
 
-# Run a specific test module
-bench --site hr-globexdigital run-tests --app greythr_bridge --module greythr_bridge.tests.test_client
-
-# Migrate (apply patches) after pulling new code
+# Migrate after pulling new code
 bench --site hr-globexdigital migrate
 
-# Reload a DocType after editing its .json file
-bench --site hr-globexdigital reload-doctype "greytHR Settings"
-
-# Export current fixtures (after creating custom fields via UI)
-bench --site hr-globexdigital export-fixtures --app greythr_bridge
-
-# Tail logs (useful while debugging)
-tail -f sites/hr-globexdigital/logs/*.log
+# Export fixtures after editing Letter Types / Client Scripts via UI
+bench --site hr-globexdigital export-fixtures --app globex_hr_letters
 ```
-
----
-
-## Where to look things up
-
-| Question | Where to find the answer |
-|---|---|
-| What's the next task to work on? | `CHANGELOG.md` (last entry) → `PLAN.md` Section 5 (next phase) |
-| What fields does this DocType have? | `PLAN.md` Section 3.1 |
-| What's the GreytHRClient supposed to do? | `PLAN.md` Section 5, Phase 1, "Detailed spec" |
-| Which greytHR API endpoints do we use? | greytHR docs at https://api-docs.greythr.com |
-| How do I add a new letter type? | `PLAN.md` Phase 4 |
-| Why are we doing X this way? | `PLAN.md` Section 1 (Context) and Section 2 (Conventions) |
-| Is there a Frappe-idiomatic way to do this? | https://docs.frappe.io/framework — search first; ask second |
-
----
 
 ## When in doubt
 
-- **Read `PLAN.md`.** It's the source of truth.
-- **If `PLAN.md` doesn't answer it, ask me.** Don't guess.
-- **If it's a Frappe-framework question, search https://docs.frappe.io and https://discuss.frappe.io.** The community is active and most answers exist.
-- **If suggesting a deviation from these conventions, flag it explicitly** — say "this breaks rule X, here's why I think it's worth it" rather than silently doing it.
-
----
+- **Read `PLAN.md`** and the design spec. If they don't answer it, ask — don't guess.
+- Frappe-framework questions: search https://docs.frappe.io and https://discuss.frappe.io first.
+- If suggesting a deviation from these conventions, flag it explicitly.
 
 ## Session etiquette
 
-At the start of each session, say:
-
-> I've read PLAN.md and CLAUDE.md. The last CHANGELOG entry is "<entry>". We're currently in Phase <N>. The next task is <X.Y>: <task name>. Ready to proceed when you confirm.
-
-At the end of each session, before stopping:
-
-- Update `CHANGELOG.md`
-- Make sure all tests pass
-- Commit with a descriptive message referencing phase and task number
-- Note in chat what's left unfinished so the next session can pick up cleanly
+At the start of each session: state the last CHANGELOG entry and the next task, and wait for confirmation. At the end: update `CHANGELOG.md`, make sure all tests pass, commit with a descriptive message, note what's unfinished.

@@ -1,11 +1,47 @@
 # Changelog
 
-All notable changes to `greythr_bridge` are documented here.
+All notable changes to `globex_hr_letters` (formerly `greythr_bridge`) are
+documented here.
 Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ---
 
 ## [Unreleased]
+
+### 2026-07-11 — Standalone pivot: globex_hr_letters
+
+- ✅ **Pivot (spec 2026-07-10):** removed the entire greytHR integration
+  (GreytHRClient, api wrappers, mappers, sync tasks, diagnostics, rate
+  limiter, custom fields, sync tests) and rebuilt the repo as a standalone
+  HR letters generation app.
+- ✅ **Rename:** app `greythr_bridge` → `globex_hr_letters`; module
+  `greytHR` → `HR Letters`; settings → `HR Letters Settings`.
+- ✅ **New doctypes:** Letter Type (UI-managed catalog), HR Letter
+  (submittable, dynamic Employee/Job Applicant recipient, status lifecycle,
+  filled-values audit), HR Letter Compensation Row, HR Letters Settings.
+- ✅ **Generic engine** (`letters/engine.py`): placeholder scan → resolve
+  (recipient → Settings → compensation table → prompt dialog) → hard error
+  on unresolved → dual render (HTML/WeasyPrint shipped library,
+  DOCX/docxtpl for HR-authored types) → attach → Zoho dispatch / email.
+- ✅ **Shipped template library:** 14 letter types preloaded via fixtures
+  (Offer, Appointment, Confirmation, Promotion, Salary Revision, Experience,
+  Relieving, Service Certificate, Warning, Termination, Internship
+  Certificate, Address Proof, Consultant Offer, Internship Offer); new
+  compensation annexure renders from the HR Letter breakup table.
+- ✅ **Zoho flow repointed at HR Letter:** webhook (HMAC + 5-min replay
+  window unchanged) flips status to Signed and attaches the signed PDF;
+  stalled-signings cron reminds pending signers after a configurable
+  threshold.
+- ✅ **Workspace + UX:** HR Letters workspace; Generate Letter buttons on
+  Employee and Job Applicant; HR Letter form drives Generate / Send for
+  Signature / Issue / Resend.
+- ✅ **Tests:** suite rebuilt — 71 offline tests green.
+- 🔜 Next: install on the test site, end-to-end smoke (plain + signature
+  letter), letterhead-from-Settings pass, HR template review (PLAN.md §3).
+
+---
+
+### Historical — greythr_bridge era (pre-pivot)
 
 ### Phase 0 — Scaffolding
 

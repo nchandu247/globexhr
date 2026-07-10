@@ -1,56 +1,80 @@
-# greythr_bridge
+# globex_hr_letters
 
 Custom Frappe app for Globex Digital Solutions Pvt Ltd.
-Integrates Frappe HR with greytHR Cloud for employee sync, letter generation, and e-signature workflows.
+Standalone HR letters generation application: a UI-managed letter catalog, a
+prebuilt library of professional letter templates, and Zoho Sign e-signature
+workflows — running alongside Frappe HR.
 
 ## Overview
 
-- Pulls employee master data from greytHR into Frappe HR (every 15 min)
-- Pushes signed offer letters and new joiners back to greytHR
-- Orchestrates e-signature flows via Zoho Sign
+- **Letter Type catalog** — HR manages letter types entirely in the UI. 14
+  professional templates ship preloaded (Offer, Appointment, Confirmation,
+  Promotion, Salary Revision, Experience, Relieving, Service Certificate,
+  Warning, Termination, Internship Certificate, Address Proof, Consultant
+  Offer, Internship Offer).
+- **HR Letter** — one record per letter issued, with a full status lifecycle
+  (Draft → Generated → Sent for Signature → Signed / Issued) and audit trail.
+- **Dual render engine** — shipped templates are pixel-perfect HTML rendered
+  via WeasyPrint (letterhead, watermark, brand CSS); HR can add custom types
+  by uploading a DOCX with `{{placeholders}}`.
+- **Smart placeholder resolution** — recipient fields (Employee or Job
+  Applicant) auto-fill, company/letterhead fields come from Settings, the
+  compensation annexure comes from a breakup table, and anything else is
+  prompted at generation time. Unresolved placeholders are a hard error —
+  no silent blanks.
+- **Zoho Sign** — signature letters route through Zoho Sign with HMAC-verified
+  webhooks; the signed PDF is attached back automatically. A daily job nudges
+  stalled signatures.
 
-See `PLAN.md` for the full architecture and phase-by-phase build plan.
+See `docs/superpowers/specs/2026-07-10-globex-hr-letters-design.md` for the
+approved design, and `PLAN.md` for the build plan.
 
 ## Requirements
 
 - Python 3.10+
 - Frappe 15+ with Frappe HR (`hrms`) installed
-- greytHR Essential plan with API access enabled
-- Zoho Sign business account (India DC)
+- WeasyPrint system deps (libcairo/pango) on the bench
+- Zoho Sign business account (India DC) — only for signature letters
 
 ## Installation
 
 ```bash
 # On your Frappe bench
 bench get-app https://github.com/nchandu247/globexhr.git
-bench --site hr.globexdigital.ai install-app greythr_bridge
-bench --site hr.globexdigital.ai migrate
+bench --site <site> install-app globex_hr_letters
+bench --site <site> migrate
 ```
 
 ## Configuration
 
-1. In Frappe HR, open **greytHR Settings** (search in the top bar)
-2. Enable the integration toggle
-3. Fill in:
-   - `api_base_url`: `https://api.greythr.com`
-   - `tenant_domain`: `globex.greythr.com`
-   - `client_id` and `client_secret` from greytHR Admin → API Users
-   - `zoho_sign_api_key`, `zoho_sign_account_id`, `zoho_sign_webhook_secret` from Zoho Sign console
-4. Click **Save**
-5. Run the smoke test: `bench --site hr.globexdigital.ai execute greythr_bridge.api.client.test_connection`
+1. In Frappe, open **HR Letters Settings**
+2. Fill in the company letterhead block (name, address, signatory name /
+   designation / email, signature image)
+3. For signature letters, fill the Zoho Sign block (client id, client secret,
+   refresh token, webhook secret) and register the webhook URL in the Zoho
+   Sign console:
+   `https://<site>/api/method/globex_hr_letters.webhooks.zoho_sign.callback`
+4. Health check: `bench --site <site> execute globex_hr_letters.letters.merger.health_check`
+
+## Generating a letter
+
+1. Open an Employee (or Job Applicant) → **Generate Letter**, or create a new
+   **HR Letter** from the HR Letters workspace
+2. Pick the Letter Type → **Generate** — the dialog prompts for any values the
+   system can't auto-fill (e.g. work location, effective date)
+3. Review the attached PDF → **Send for Signature** (Zoho Sign) or **Issue**
+   (emails the PDF to the recipient)
 
 ## Running Tests
 
 ```bash
 pip install -r requirements.txt
-pytest greythr_bridge/tests/ -v
+pytest globex_hr_letters/tests/ -v
 ```
 
-Tests run fully offline — no real API calls are made in the test suite.
+Tests run fully offline — Frappe is mocked and no real API calls are made.
 
 ## Development
 
-See `PLAN.md` for conventions, phase tasks, and the implementation spec.
-See `CLAUDE.md` for coding rules used in every Claude Code session.
-See `NOTES_greythr_api.md` for the greytHR API schema reference.
-See `CHANGELOG.md` for what has changed.
+See `PLAN.md` for the build plan, `CLAUDE.md` for coding rules used in every
+Claude Code session, and `CHANGELOG.md` for what has changed.

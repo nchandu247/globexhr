@@ -1,5 +1,12 @@
 # greythr_bridge — Project Reference Manual
 
+> **⚠️ SUPERSEDED 2026-07-11.** This manual documents the retired
+> `greythr_bridge` era (Frappe HR ↔ greytHR sync). On 2026-07-10 the project
+> pivoted to **`globex_hr_letters`** — a standalone HR letters generation app
+> with all greytHR integration removed. Kept for historical reference only;
+> file paths, doctypes, and commands below no longer exist. See `PLAN.md`,
+> `CLAUDE.md`, and `docs/superpowers/specs/2026-07-10-globex-hr-letters-design.md`.
+
 > **Status: PAUSED 2026-05-26.** Globex signed a 300-employee onboarding deal (60-day timeline) and is consolidating onto greytHR-only for that work. This Frappe HR bridge stays in production-stable state but is not being actively extended. See [§12 Why Paused](#12-why-paused) and [§13 How to Resume](#13-how-to-resume).
 >
 > **Last working commit**: `8988fd8` (2026-05-26) — A-v2: custom_last_working_date for Separation letters
