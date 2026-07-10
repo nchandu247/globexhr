@@ -242,11 +242,17 @@ def get_signed_document(request_id: str) -> bytes:
     return resp.content
 
 
+@frappe.whitelist()
 def resend_signing_request(request_id: str) -> None:
     """
     Resend the signing email to all pending signers on an existing request.
-    Used by the "Resend" button on Job Offer and the stalled-signing scheduled task.
+    Used by the "Resend Signing Request" button on HR Letter and the
+    stalled-signings scheduled task. HR Manager / System Manager only when
+    called over HTTP.
     """
+    roles = frappe.get_roles(frappe.session.user)
+    if "HR Manager" not in roles and "System Manager" not in roles and frappe.session.user != "Administrator":
+        frappe.throw("Only HR Manager or System Manager can resend signing requests.")
     resp = requests.post(
         f"{_BASE}/requests/{request_id}/remind",
         headers=_headers(),

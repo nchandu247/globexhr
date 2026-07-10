@@ -1,0 +1,176 @@
+{
+ "actions": [],
+ "creation": "2026-07-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "stalled_threshold_days",
+  "company_section",
+  "company_name",
+  "company_address",
+  "company_phone",
+  "company_email",
+  "company_website",
+  "column_break_company",
+  "signatory_name",
+  "signatory_designation",
+  "signatory_email",
+  "signature_image",
+  "zoho_section",
+  "zoho_sign_client_id",
+  "zoho_sign_client_secret",
+  "zoho_sign_refresh_token",
+  "zoho_sign_webhook_secret",
+  "column_break_zoho",
+  "zoho_sign_access_token",
+  "zoho_sign_token_expires_at"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "description": "Master switch. When off, letter generation and the stalled-signings check are disabled.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "3",
+   "description": "Nudge HR when a letter has been Sent for Signature for more than this many days.",
+   "fieldname": "stalled_threshold_days",
+   "fieldtype": "Int",
+   "label": "Stalled Signing Threshold (Days)"
+  },
+  {
+   "fieldname": "company_section",
+   "fieldtype": "Section Break",
+   "label": "Company Letterhead"
+  },
+  {
+   "default": "Globex Digital Solutions Pvt Ltd",
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "label": "Company Name"
+  },
+  {
+   "fieldname": "company_address",
+   "fieldtype": "Small Text",
+   "label": "Registered Address"
+  },
+  {
+   "fieldname": "company_phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "fieldname": "company_email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "company_website",
+   "fieldtype": "Data",
+   "label": "Website"
+  },
+  {
+   "fieldname": "column_break_company",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Default signatory printed on letters (Letter Types can override with a custom signatory).",
+   "fieldname": "signatory_name",
+   "fieldtype": "Data",
+   "label": "Signatory Name"
+  },
+  {
+   "fieldname": "signatory_designation",
+   "fieldtype": "Data",
+   "label": "Signatory Designation"
+  },
+  {
+   "description": "Email address that receives the Zoho Sign request as the company signer (signs first).",
+   "fieldname": "signatory_email",
+   "fieldtype": "Data",
+   "label": "Signatory Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "signature_image",
+   "fieldtype": "Attach Image",
+   "label": "Signature Image"
+  },
+  {
+   "fieldname": "zoho_section",
+   "fieldtype": "Section Break",
+   "label": "Zoho Sign"
+  },
+  {
+   "fieldname": "zoho_sign_client_id",
+   "fieldtype": "Data",
+   "label": "Client ID"
+  },
+  {
+   "fieldname": "zoho_sign_client_secret",
+   "fieldtype": "Password",
+   "label": "Client Secret"
+  },
+  {
+   "fieldname": "zoho_sign_refresh_token",
+   "fieldtype": "Password",
+   "label": "Refresh Token"
+  },
+  {
+   "fieldname": "zoho_sign_webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret"
+  },
+  {
+   "fieldname": "column_break_zoho",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Cached OAuth access token. Managed automatically — do not edit.",
+   "fieldname": "zoho_sign_access_token",
+   "fieldtype": "Password",
+   "label": "Access Token (Cached)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "zoho_sign_token_expires_at",
+   "fieldtype": "Data",
+   "label": "Access Token Expires At",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR Letters",
+ "name": "HR Letters Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

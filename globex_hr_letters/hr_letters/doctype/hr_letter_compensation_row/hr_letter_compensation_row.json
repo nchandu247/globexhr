@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "creation": "2026-07-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "component",
+  "monthly_amount",
+  "annual_amount"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "fieldname": "component",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Component",
+   "reqd": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "monthly_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Monthly (INR)"
+  },
+  {
+   "columns": 3,
+   "fieldname": "annual_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Annual (INR)"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR Letters",
+ "name": "HR Letter Compensation Row",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

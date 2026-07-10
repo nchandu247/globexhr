@@ -1,0 +1,183 @@
+{
+ "actions": [],
+ "autoname": "field:letter_type_name",
+ "creation": "2026-07-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "letter_type_name",
+  "category",
+  "is_active",
+  "description",
+  "column_break_main",
+  "recipient_kind",
+  "requires_signature",
+  "uses_compensation_table",
+  "template_section",
+  "render_engine",
+  "html_template",
+  "template",
+  "signatory_section",
+  "signatory_source",
+  "signatory_name",
+  "signatory_designation",
+  "signature_image"
+ ],
+ "fields": [
+  {
+   "fieldname": "letter_type_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Letter Type Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Onboarding\nEmployment\nCompensation\nExit\nDisciplinary\nCertificate",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  },
+  {
+   "description": "What this letter is for and when HR should use it.",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Employee",
+   "description": "Who this letter is addressed to. Offer/Appointment letters go to candidates (Job Applicant); everything else to Employees.",
+   "fieldname": "recipient_kind",
+   "fieldtype": "Select",
+   "label": "Recipient",
+   "options": "Employee\nJob Applicant",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "When checked, the generated letter is routed through Zoho Sign for e-signature. Otherwise it is issued as a plain PDF with the signature image.",
+   "fieldname": "requires_signature",
+   "fieldtype": "Check",
+   "label": "Requires Signature (Zoho Sign)"
+  },
+  {
+   "default": "0",
+   "description": "Template contains a {% for row in compensation %} annexure. The HR Letter form will show a compensation breakup table.",
+   "fieldname": "uses_compensation_table",
+   "fieldtype": "Check",
+   "label": "Uses Compensation Table"
+  },
+  {
+   "fieldname": "template_section",
+   "fieldtype": "Section Break",
+   "label": "Template"
+  },
+  {
+   "default": "DOCX",
+   "description": "HTML = pixel-perfect shipped templates (developer-maintained). DOCX = upload a Word file with {{placeholders}} (HR self-serve).",
+   "fieldname": "render_engine",
+   "fieldtype": "Select",
+   "label": "Render Engine",
+   "options": "HTML\nDOCX",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.render_engine=='HTML'",
+   "description": "Template filename under templates/letters/html/ (e.g. offer_letter.html).",
+   "fieldname": "html_template",
+   "fieldtype": "Data",
+   "label": "HTML Template File",
+   "mandatory_depends_on": "eval:doc.render_engine=='HTML'"
+  },
+  {
+   "depends_on": "eval:doc.render_engine=='DOCX'",
+   "description": "Word document with {{placeholder}} variables. Unknown placeholders are prompted at generation time.",
+   "fieldname": "template",
+   "fieldtype": "Attach",
+   "label": "DOCX Template",
+   "mandatory_depends_on": "eval:doc.render_engine=='DOCX'"
+  },
+  {
+   "fieldname": "signatory_section",
+   "fieldtype": "Section Break",
+   "label": "Signatory"
+  },
+  {
+   "default": "From Settings",
+   "fieldname": "signatory_source",
+   "fieldtype": "Select",
+   "label": "Signatory Source",
+   "options": "From Settings\nCustom"
+  },
+  {
+   "depends_on": "eval:doc.signatory_source=='Custom'",
+   "fieldname": "signatory_name",
+   "fieldtype": "Data",
+   "label": "Signatory Name"
+  },
+  {
+   "depends_on": "eval:doc.signatory_source=='Custom'",
+   "fieldname": "signatory_designation",
+   "fieldtype": "Data",
+   "label": "Signatory Designation"
+  },
+  {
+   "depends_on": "eval:doc.signatory_source=='Custom'",
+   "fieldname": "signature_image",
+   "fieldtype": "Attach Image",
+   "label": "Signature Image"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR Letters",
+ "name": "Letter Type",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "HR User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

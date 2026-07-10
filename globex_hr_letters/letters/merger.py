@@ -1,13 +1,22 @@
 """
-DOCX mail-merge for Globex HR letters using docxtpl (Jinja2 inside Word).
+Render primitives for Globex HR letters.
 
-Templates live in globex_hr_letters/templates/letters/*.docx.
-Add {{ variable_name }} placeholders in your Word document.
-Call merge_to_pdf() to get PDF bytes ready for Zoho Sign.
+Two render engines, selected per Letter Type:
 
-Smoke tests (run via bench execute):
-    bench --site hr-globexdigital execute globex_hr_letters.letters.merger.test_merge_only
-    bench --site hr-globexdigital execute globex_hr_letters.letters.merger.test_merge_to_pdf
+  HTML  — Jinja2 template under templates/letters/html/ (extends _base.html
+          for letterhead, watermark, brand CSS) rendered to PDF via
+          WeasyPrint. Pixel-perfect; used by the shipped template library.
+          Zoho Sign text tags are embedded by the base template when the
+          context sets requires_signature.
+
+  DOCX  — HR-uploaded Word file with {{placeholder}} variables rendered via
+          docxtpl. For signature letters the DOCX (with appended Zoho text
+          tags) is uploaded to Zoho Sign directly — Zoho converts to PDF
+          server-side, so no LibreOffice needed. For plain letters the DOCX
+          is converted to PDF via LibreOffice when available.
+
+This module does rendering only — no Frappe document I/O beyond template
+file resolution. Context building lives in letters/engine.py.
 """
 import os
 import tempfile
@@ -17,43 +26,64 @@ from docxtpl import DocxTemplate
 
 from .pdf_convert import docx_to_pdf_bytes
 
-
-_TEMPLATE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "templates", "letters")
-)
-
-
-def _render_template(template_filename: str, context: dict) -> DocxTemplate:
-    """Internal: load template, render with context, return the DocxTemplate."""
-    template_path = os.path.join(_TEMPLATE_DIR, template_filename)
-    if not os.path.exists(template_path):
-        frappe.throw(
-            f"Letter template not found: {template_filename}<br>"
-            f"Expected path: {template_path}",
-            title="Template Missing",
-        )
-
-    tpl = DocxTemplate(template_path)
-    tpl.render(context)
-    return tpl
-
-
 _HTML_TEMPLATE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "templates", "letters", "html")
 )
 
 
+# ── template discovery ────────────────────────────────────────────────────────
+
+def html_template_exists(template_filename: str) -> bool:
+    """True if the named template exists under templates/letters/html/."""
+    if not template_filename or "/" in template_filename or "\\" in template_filename:
+        return False
+    return os.path.exists(os.path.join(_HTML_TEMPLATE_DIR, template_filename))
+
+
+def scan_html_placeholders(template_filename: str) -> set:
+    """
+    Return the set of undeclared Jinja2 variables in an HTML template
+    (including variables used by the base template it extends).
+    """
+    from jinja2 import Environment, FileSystemLoader, meta
+
+    env = Environment(loader=FileSystemLoader(_HTML_TEMPLATE_DIR))
+    names = set()
+    # Walk the template plus anything it extends/includes so base-template
+    # variables (company_name, signatory_name, ...) are captured too.
+    pending = [template_filename]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        source = env.loader.get_source(env, current)[0]
+        ast = env.parse(source)
+        names |= meta.find_undeclared_variables(ast)
+        pending.extend(ref for ref in meta.find_referenced_templates(ast) if ref)
+    return names
+
+
+def scan_docx_placeholders(docx_path: str) -> set:
+    """Return the set of undeclared Jinja2 variables in a DOCX template."""
+    tpl = DocxTemplate(docx_path)
+    return tpl.get_undeclared_template_variables()
+
+
+# ── HTML engine ───────────────────────────────────────────────────────────────
+
 def merge_to_pdf_via_html(template_filename: str, context: dict) -> bytes:
     """
     Render an HTML template (Jinja2) and produce PDF bytes via WeasyPrint.
 
-    Templates live in globex_hr_letters/templates/letters/html/. Each letter
-    template extends _base.html (letterhead, watermark, footer, Zoho tag
-    area) and uses _styles.css for typography, layout, and brand colours.
+    Templates live in templates/letters/html/. Each letter template extends
+    _base.html (letterhead, watermark, footer, Zoho tag area) and uses
+    _styles.css for typography, layout, and brand colours.
 
-    The returned PDF includes invisible Zoho Sign text tags ({{S:R1*}} and
-    {{S:R2*}}) so Zoho auto-creates Signature fields on upload — no field
-    coordinates needed.
+    When context["requires_signature"] is truthy the base template renders
+    invisible Zoho Sign text tags ({{S:R1*}} and {{S:R2*}}) so Zoho
+    auto-creates Signature fields on upload — no field coordinates needed.
 
     Raises frappe.ValidationError if the template file is missing.
     Raises RuntimeError if WeasyPrint rendering fails.
@@ -93,28 +123,50 @@ def merge_to_pdf_via_html(template_filename: str, context: dict) -> bytes:
     return pdf_bytes
 
 
-def merge_to_docx(template_filename: str, context: dict) -> bytes:
+# ── DOCX engine ───────────────────────────────────────────────────────────────
+
+def merge_docx_file(docx_path: str, context: dict,
+                    append_signature_tags: bool = False) -> bytes:
     """
-    Fill *template_filename* (inside templates/letters/) with *context*
-    and return DOCX bytes — ready to upload to Zoho Sign.
+    Fill the DOCX template at *docx_path* with *context* and return DOCX bytes.
 
-    After Jinja2 rendering, appends Zoho Sign text tags so Zoho auto-creates
-    a Signature field for each signer. Without this, /submit returns
-    error 9101 ("Add atleast one field for a signer").
-
-    Preferred over merge_to_pdf() because Zoho Sign accepts .docx uploads
-    natively and converts to PDF server-side. No LibreOffice dependency.
-
-    Raises frappe.ValidationError if the template file is missing.
+    With append_signature_tags=True, appends Zoho Sign text tags so Zoho
+    auto-creates a Signature field for each signer. Without them, Zoho's
+    /submit returns error 9101 ("Add atleast one field for a signer").
+    The rendered DOCX is then ready to upload to Zoho Sign (which converts
+    to PDF server-side — no LibreOffice dependency).
     """
-    tpl = _render_template(template_filename, context)
+    tpl = DocxTemplate(docx_path)
+    tpl.render(context)
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp_path = tmp.name
     try:
         tpl.save(tmp_path)
-        _append_zoho_signature_tags(tmp_path)
+        if append_signature_tags:
+            _append_zoho_signature_tags(tmp_path)
         with open(tmp_path, "rb") as f:
             return f.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def docx_bytes_to_pdf(docx_bytes: bytes) -> bytes:
+    """
+    Convert rendered DOCX bytes to PDF via LibreOffice headless.
+
+    Frappe Cloud's standard image does NOT include LibreOffice — signature
+    letters avoid this path by uploading DOCX to Zoho directly. Plain-issue
+    DOCX letters need LibreOffice on the bench; docx_to_pdf_bytes raises a
+    clear error when it's missing.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+        tmp_path = tmp.name
+        tmp.write(docx_bytes)
+    try:
+        return docx_to_pdf_bytes(tmp_path)
     finally:
         try:
             os.unlink(tmp_path)
@@ -128,12 +180,11 @@ def _append_zoho_signature_tags(docx_path: str) -> None:
 
     Tags:
       {{S:R1*}}  — mandatory Signature field for recipient 1 (HR signatory)
-      {{S:R2*}}  — mandatory Signature field for recipient 2 (candidate)
+      {{S:R2*}}  — mandatory Signature field for recipient 2 (letter recipient)
 
     Tags are rendered in white text so they are invisible in the rendered
     PDF (white-on-white) while Zoho still parses them from the document
-    content (Zoho reads text, not color). Verified: previous PDF showed
-    tags as visible black 8pt — this commit makes them invisible.
+    content (Zoho reads text, not color).
 
     Done as a post-processing step (not inside the template) to avoid the
     `{{ }}` syntax conflicting with docxtpl/Jinja2 expression evaluation.
@@ -149,33 +200,7 @@ def _append_zoho_signature_tags(docx_path: str) -> None:
     doc.save(docx_path)
 
 
-def merge_to_pdf(template_filename: str, context: dict) -> bytes:
-    """
-    Fill *template_filename* with *context* and return PDF bytes.
-
-    Requires LibreOffice headless on the host. Frappe Cloud does NOT include
-    LibreOffice in its standard image — use merge_to_docx() instead and let
-    Zoho Sign handle the PDF conversion.
-
-    Kept available as a fallback / for environments where LibreOffice exists.
-
-    Raises frappe.ValidationError if template missing.
-    Raises RuntimeError if LibreOffice conversion fails.
-    """
-    tpl = _render_template(template_filename, context)
-    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        tpl.save(tmp_path)
-        return docx_to_pdf_bytes(tmp_path)
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-
-# ── Shared formatting helpers (module level — used by all context builders) ──
+# ── Shared formatting helpers ─────────────────────────────────────────────────
 
 def fmt_inr(value) -> str:
     """Format a number in Indian comma style, no currency symbol.
@@ -197,7 +222,7 @@ def fmt_inr(value) -> str:
 
 
 def fmt_date(value) -> str:
-    """Format a Frappe date field as '01 June 2025'."""
+    """Format a Frappe date field as '01 June 2026'."""
     if not value:
         return ""
     try:
@@ -208,7 +233,7 @@ def fmt_date(value) -> str:
 
 
 def today_str() -> str:
-    """Today's date as '01 June 2025'."""
+    """Today's date as '01 June 2026'."""
     try:
         import frappe.utils
         return frappe.utils.formatdate(frappe.utils.today(), "dd MMMM yyyy")
@@ -216,180 +241,11 @@ def today_str() -> str:
         return ""
 
 
-def build_offer_context(doc) -> dict:
-    """
-    Build the Jinja2 context dict from a Job Offer document.
-    Matches the {{ variable }} placeholders expected in offer_letter.html.
-
-    All numeric values are returned as bare strings in Indian comma format
-    (e.g. '6,00,000') with NO currency symbol — the template adds '₹' where needed.
-    """
-
-    # ── Salary components ─────────────────────────────────────────────────────
-    basic   = doc.custom_basic_monthly or 0
-    hra     = doc.custom_hra_monthly or 0
-    conv    = doc.custom_conveyance_allowance_monthly or 0
-    med_all = doc.custom_medical_allowance_monthly or 0
-    special = doc.custom_special_allowance_monthly or 0
-    gross   = basic + hra + conv + med_all + special
-
-    emp_pf  = doc.custom_employee_pf_monthly or 0
-    emp_esi = doc.custom_employee_esi_monthly or 0
-    pt      = doc.custom_professional_tax_monthly or 0
-    net     = gross - emp_pf - emp_esi - pt
-
-    er_pf   = doc.custom_employer_pf or 0
-    er_esi  = doc.custom_employer_esiinsurance_monthly or 0
-
-    annual_ctc   = doc.custom_annual_ctc or 0
-    monthly_ctc  = round(annual_ctc / 12) if annual_ctc else gross + er_pf + er_esi
-
-    esi_applies = gross <= 21000
-
-    # Medical insurance line for Annexure — shown only when ESI doesn't apply
-    med_ins_monthly = 0
-    if not esi_applies and not getattr(doc, "custom_medical_insurance_opted_out", False):
-        annual_prem = getattr(doc, "custom_medical_insurance_annual_premium", None) or 10000
-        med_ins_monthly = round(annual_prem / 12)
-
-    # ── Optional offer terms (custom fields on Job Offer) ─────────────────────
-    work_location         = getattr(doc, "custom_work_location", None) or "Hyderabad"
-    probation_period      = getattr(doc, "custom_probation_period", None) or "6 months"
-    notice_period         = getattr(doc, "custom_notice_period", None) or "60 days"
-    joining_bonus_raw     = getattr(doc, "custom_joining_bonus", None) or 0
-    variable_pay_raw      = getattr(doc, "custom_variable_pay_annual", None) or 0
-    acceptance_deadline_v = getattr(doc, "custom_acceptance_deadline", None)
-    band                  = getattr(doc, "custom_band", None) or ""
-
-    # ── Annual / total derived values for Annexure A ──────────────────────────
-    total_deductions_monthly = emp_pf + emp_esi + pt
-    employer_total_monthly   = er_pf + er_esi + med_ins_monthly
-    today_str_value = today_str()
-
-    # ── Reporting manager resolution (Link → Employee name lookup) ────────────
-    reporting_to_raw  = getattr(doc, "custom_reporting_to", None) or ""
-    reporting_to_name = reporting_to_raw
-    if reporting_to_raw:
-        try:
-            import frappe
-            resolved = frappe.db.get_value("Employee", reporting_to_raw, "employee_name")
-            if resolved:
-                reporting_to_name = resolved
-        except Exception:
-            pass
-
-    # ── Candidate contact details ─────────────────────────────────────────────
-    # Email: prefer Job Offer's own applicant_email field (it's right there);
-    # phone & address: still need to fetch the Job Applicant doc.
-    candidate_email   = getattr(doc, "applicant_email", None) or ""
-    candidate_mobile  = ""
-    candidate_address = ""
-    try:
-        job_applicant = getattr(doc, "job_applicant", None)
-        if job_applicant:
-            import frappe
-            applicant = frappe.get_doc("Job Applicant", job_applicant)
-            if not candidate_email:
-                candidate_email = applicant.email_id or ""
-            candidate_mobile  = (getattr(applicant, "phone_number", None)
-                                 or getattr(applicant, "cell_number", None)
-                                 or "")
-            candidate_address = (getattr(applicant, "custom_address", None)
-                                 or getattr(applicant, "country", None)
-                                 or "")
-    except Exception:
-        pass
-
-    return {
-        # ── Header / addressing ────────────────────────────────────────────────
-        "ref_number":          doc.name,
-        "offer_date":          fmt_date(doc.offer_date),
-        "title":               getattr(doc, "custom_title", None) or "",
-        "candidate_name":      doc.applicant_name or "",
-        "candidate_email":     candidate_email,
-        "candidate_mobile":    candidate_mobile,
-        "candidate_address":   candidate_address,
-        "designation":         doc.designation or "",
-        "department":          getattr(doc, "department", None) or "",
-        "date_of_joining":     fmt_date(getattr(doc, "custom_date_of_joining", None)),
-        "acceptance_deadline": fmt_date(acceptance_deadline_v),
-
-        # ── Offer terms ────────────────────────────────────────────────────────
-        "work_location":       work_location,
-        "reporting_to":        reporting_to_name,
-        "probation_period":    probation_period,
-        "notice_period":       notice_period,
-        "joining_bonus":       fmt_inr(joining_bonus_raw),
-        "variable_pay_annual": fmt_inr(variable_pay_raw),
-        "band":                band,
-        "current_date":        today_str_value,
-
-        # ── CTC summary ────────────────────────────────────────────────────────
-        "annual_ctc":          fmt_inr(annual_ctc),
-        "monthly_ctc":         fmt_inr(monthly_ctc),
-        "gross_monthly":       fmt_inr(gross),
-        "gross_annual":        fmt_inr(gross * 12),
-        "net_take_home":       fmt_inr(net),
-        "net_take_home_annual": fmt_inr(net * 12),
-
-        # ── Annexure A — earnings (monthly + annual) ───────────────────────────
-        "basic_monthly":              fmt_inr(basic),
-        "basic_annual":               fmt_inr(basic * 12),
-        "hra_monthly":                fmt_inr(hra),
-        "hra_annual":                 fmt_inr(hra * 12),
-        "conveyance_monthly":         fmt_inr(conv),
-        "conveyance_annual":          fmt_inr(conv * 12),
-        "medical_allowance_monthly":  fmt_inr(med_all),
-        "medical_allowance_annual":   fmt_inr(med_all * 12),
-        "special_allowance_monthly":  fmt_inr(special),
-        "special_allowance_annual":   fmt_inr(special * 12),
-
-        # ── Annexure A — deductions (monthly + annual + totals) ────────────────
-        "employee_pf_monthly":        fmt_inr(emp_pf),
-        "employee_pf_annual":         fmt_inr(emp_pf * 12),
-        "employee_esi_monthly":       fmt_inr(emp_esi),
-        "employee_esi_annual":        fmt_inr(emp_esi * 12),
-        "professional_tax_monthly":   fmt_inr(pt),
-        "professional_tax_annual":    fmt_inr(pt * 12),
-        "total_deductions_monthly":   fmt_inr(total_deductions_monthly),
-        "total_deductions_annual":    fmt_inr(total_deductions_monthly * 12),
-
-        # ── Annexure A — employer contributions (monthly + annual + totals) ────
-        "employer_pf_monthly":        fmt_inr(er_pf),
-        "employer_pf_annual":         fmt_inr(er_pf * 12),
-        "employer_esi_monthly":       fmt_inr(er_esi),
-        "employer_esi_annual":        fmt_inr(er_esi * 12),
-        "medical_insurance_monthly":  fmt_inr(med_ins_monthly),
-        "medical_insurance_annual":   fmt_inr(med_ins_monthly * 12),
-        "employer_deductions_annual": fmt_inr(employer_total_monthly * 12),
-
-        # ── Conditional flags (for {% if %} blocks in template) ────────────────
-        "esi_applies":        esi_applies,
-        "pf_opted_out":       bool(getattr(doc, "custom_pf_opted_out", False)),
-        "medical_opted_out":  bool(getattr(doc, "custom_medical_insurance_opted_out", False)),
-        "has_joining_bonus":  bool(joining_bonus_raw and float(joining_bonus_raw) > 0),
-        "has_variable_pay":   bool(variable_pay_raw and float(variable_pay_raw) > 0),
-
-        # ── Raw numbers (for arithmetic inside template if needed) ─────────────
-        "basic_monthly_raw":       basic,
-        "gross_monthly_raw":       gross,
-        "net_take_home_raw":       net,
-        "annual_ctc_raw":          annual_ctc,
-        "joining_bonus_raw":       joining_bonus_raw,
-        "variable_pay_annual_raw": variable_pay_raw,
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase B context builders — 6 new letter types
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def _format_name(name) -> str:
+def format_person_name(name) -> str:
     """
     Pretty-case a name string for letter display.
 
-    greytHR returns names in mixed casing — sometimes all lowercase
+    Source data may arrive in mixed casing — sometimes all lowercase
     ("nalluri sudha"), sometimes all uppercase ("MOHD BALEEGH AHMED").
     For formal letters we want "Nalluri Sudha" / "Mohd Baleegh Ahmed".
 
@@ -398,13 +254,6 @@ def _format_name(name) -> str:
       - Each word: if ALL-upper or ALL-lower → title-case it
                    if mixed-case (e.g., "McDonald", "O'Brien") → preserve as-is
       - Joined back with single spaces
-
-    Examples:
-      "nalluri sudha"       → "Nalluri Sudha"
-      "MOHD BALEEGH AHMED"  → "Mohd Baleegh Ahmed"
-      "Avinash Nalluri"     → "Avinash Nalluri"   (already cased — no change)
-      "McDonald Smith"      → "McDonald Smith"    (mixed-case preserved)
-      ""                    → ""
     """
     if not name:
         return ""
@@ -415,265 +264,14 @@ def _format_name(name) -> str:
     for word in words:
         if not word:
             continue
-        # All-upper OR all-lower → safe to title-case
         if word.isupper() or word.islower():
             out.append(word.capitalize())
         else:
-            # Mixed-case → preserve (handles McDonald, O'Brien, iPhone-style)
             out.append(word)
     return " ".join(out)
 
 
-def _resolve_signatory_name() -> str:
-    """Get the configured HR signatory's full name from HR Letters Settings."""
-    try:
-        import frappe
-        settings = frappe.get_single("HR Letters Settings")
-        user_id = getattr(settings, "default_signatory", None)
-        if user_id:
-            return frappe.db.get_value("User", user_id, "full_name") or ""
-    except Exception:
-        pass
-    return "Authorised Signatory"
-
-
-def _resolve_employee_email(employee_doc, prefer_personal: bool = False) -> str:
-    """Same fallback chain as non_signing._resolve_email but standalone."""
-    company = getattr(employee_doc, "company_email", None) or None
-    personal = getattr(employee_doc, "personal_email", None) or None
-    return (personal or company) if prefer_personal else (company or personal) or ""
-
-
-def build_consultant_offer_context(doc) -> dict:
-    """
-    Context for Consultant Offer Letter.
-
-    INDEPENDENT of build_offer_context — consultants don't have salary/PF/ESI
-    fields. Reads doc.custom_offer_type==Consultant fields.
-    """
-    duration = getattr(doc, "custom_engagement_duration_months", None) or 0
-    fees     = getattr(doc, "custom_professional_fees_monthly", None) or 0
-
-    return {
-        "ref_number":              doc.name,
-        "offer_date":              fmt_date(doc.offer_date),
-        "title":                   getattr(doc, "custom_title", None) or "",
-        "candidate_name":          doc.applicant_name or "",
-        "designation":             doc.designation or "",
-        "engagement_start_date":   fmt_date(getattr(doc, "custom_date_of_joining", None)),
-        "engagement_duration":     f"{duration} months" if duration else "",
-        "professional_fees_monthly":  fmt_inr(fees),
-        "professional_fees_annual":   fmt_inr(fees * 12),
-        "work_location":           getattr(doc, "custom_work_location", None) or "Hyderabad",
-        "notice_period":           getattr(doc, "custom_notice_period", None) or "30 days",
-        "current_date":            today_str(),
-    }
-
-
-def build_intern_offer_context(doc) -> dict:
-    """
-    Context for Intern Offer Letter.
-
-    INDEPENDENT of build_offer_context — interns have stipend not salary.
-    """
-    duration = getattr(doc, "custom_internship_duration_months", None) or 0
-    stipend  = getattr(doc, "custom_stipend_monthly", None) or 0
-
-    # Resolve reporting manager (Link → Employee name lookup)
-    reporting_to_raw  = getattr(doc, "custom_reporting_to", None) or ""
-    reporting_to_name = reporting_to_raw
-    if reporting_to_raw:
-        try:
-            import frappe
-            name = frappe.db.get_value("Employee", reporting_to_raw, "employee_name")
-            if name:
-                reporting_to_name = name
-        except Exception:
-            pass
-
-    return {
-        "ref_number":              doc.name,
-        "offer_date":              fmt_date(doc.offer_date),
-        "title":                   getattr(doc, "custom_title", None) or "",
-        "candidate_name":          doc.applicant_name or "",
-        "designation":             doc.designation or "Intern",
-        "internship_start_date":   fmt_date(getattr(doc, "custom_date_of_joining", None)),
-        "internship_duration":     f"{duration} months" if duration else "",
-        "stipend_monthly":         fmt_inr(stipend),
-        "stipend_total":           fmt_inr(stipend * duration) if duration else "",
-        "work_location":           getattr(doc, "custom_work_location", None) or "Hyderabad",
-        "reporting_to":            reporting_to_name,
-        "current_date":            today_str(),
-    }
-
-
-def build_increment_context(ssa_doc) -> dict:
-    """
-    Context for Increment Letter.
-
-    Reads new CTC from ssa_doc.custom_annual_ctc and old CTC from the
-    previously-active SSA for the same employee.
-    """
-    import frappe
-    employee_id = ssa_doc.employee
-    employee = frappe.get_doc("Employee", employee_id) if employee_id else None
-
-    new_ctc = getattr(ssa_doc, "custom_annual_ctc", None) or 0
-    new_ctc = float(new_ctc) if new_ctc else 0
-
-    # Find previous active SSA for this employee
-    old_ctc = 0
-    previous_ssa_name = ""
-    try:
-        rows = frappe.get_all(
-            "Salary Structure Assignment",
-            filters={"employee": employee_id, "docstatus": 1,
-                     "name": ["!=", ssa_doc.name]},
-            fields=["name", "custom_annual_ctc", "from_date"],
-            order_by="from_date desc",
-            limit=1,
-        )
-        if rows:
-            previous_ssa_name = rows[0].name
-            old_ctc = float(rows[0].custom_annual_ctc or 0)
-    except Exception:
-        pass
-
-    delta = new_ctc - old_ctc
-    pct = (delta / old_ctc * 100) if old_ctc else 0
-
-    employee_name = getattr(employee, "employee_name", "") if employee else ""
-    designation = getattr(employee, "designation", "") if employee else ""
-
-    return {
-        "ref_number":        ssa_doc.name,
-        "current_date":      today_str(),
-        "employee_name":     employee_name,
-        "designation":       designation,
-        "old_annual_ctc":    fmt_inr(old_ctc) if old_ctc else "—",
-        "new_annual_ctc":    fmt_inr(new_ctc),
-        "increment_amount":  fmt_inr(delta) if delta > 0 else "—",
-        "increment_percent": f"{pct:.1f}%" if pct > 0 else "—",
-        "effective_date":    fmt_date(getattr(ssa_doc, "from_date", None)),
-        "previous_ssa":      previous_ssa_name,
-        "signatory_name":    _resolve_signatory_name(),
-    }
-
-
-def build_promotion_context(emp_doc, old_designation: str, new_designation: str,
-                             effective_date, notes: str = "") -> dict:
-    """
-    Context for Promotion Letter.
-
-    Args supplied by HR via dialog (button click).
-    """
-    return {
-        "ref_number":        emp_doc.name,
-        "current_date":      today_str(),
-        "employee_name":     getattr(emp_doc, "employee_name", "") or "",
-        "title":             "",  # Promotion letters typically don't use Mr./Ms.
-        "old_designation":   old_designation or "",
-        "new_designation":   new_designation or "",
-        "effective_date":    fmt_date(effective_date),
-        "notes":             notes or "",
-        "signatory_name":    _resolve_signatory_name(),
-    }
-
-
-def build_experience_context(separation_doc) -> dict:
-    """Context for Experience Letter (issued on Employee Separation).
-
-    Bug fixes (2026-05-26):
-      - ref_number: use employee.name (GDS####) instead of separation.name
-        (HR-EMP-SEP-#### is internal, not employee-facing).
-      - last_working_day: prefer Employee.relieving_date — Frappe HR's
-        canonical "last working day" field, populated when status flips to
-        Left. Separation doc may have a relieving_date too but the Employee
-        record is the source of truth.
-      - employee_name + designation: run through _format_name() so greytHR's
-        mixed-case data ("nalluri sudha", "MOHD BALEEGH AHMED") renders as
-        properly-cased ("Nalluri Sudha", "Mohd Baleegh Ahmed") in the
-        formal letter.
-    """
-    import frappe
-    employee = frappe.get_doc("Employee", separation_doc.employee) if separation_doc.employee else None
-
-    if employee:
-        date_of_joining = getattr(employee, "date_of_joining", None)
-        # Last working day fallback chain (A-v2 — 2026-05-26):
-        # Order reflects most-trustworthy to least-trustworthy:
-        #   1. Employee.relieving_date — Frappe HR's canonical field,
-        #      populated by greytHR sync when leavingDate is present
-        #      (greytHR is the source of truth for payroll-affecting dates)
-        #   2. Separation.custom_last_working_date — our custom field,
-        #      mandatory when either letter checkbox is ticked. HR-entered
-        #      on the Separation form. Semantically exactly "last working
-        #      day" — fills the gap that Frappe HR's stock Separation lacks.
-        #   3. Separation.resignation_letter_date — Frappe HR's existing
-        #      date field, semantically off ("when employee handed in
-        #      resignation") but better than empty.
-        #
-        # Earlier dead code: `boarding_end_date` was checked here but that
-        # field doesn't actually exist on Frappe HR's stock Employee
-        # Separation doctype (research 2026-05-26). Removed.
-        #
-        # We INTENTIONALLY don't write back to Employee.relieving_date —
-        # that would violate the one-way greytHR-to-Frappe sync invariant
-        # (the bridge value would just get overwritten by the next sync).
-        # Letter reads from this chain; Employee record is greytHR's domain.
-        last_working_day = (
-            getattr(employee, "relieving_date", None)
-            or getattr(separation_doc, "custom_last_working_date", None)
-            or getattr(separation_doc, "resignation_letter_date", None)
-        )
-        return {
-            # ref_number: employee identifier (GDS####), not separation docname
-            "ref_number":         employee.name,
-            "current_date":       today_str(),
-            # _format_name normalises greytHR's mixed-case data for letter display
-            "employee_name":      _format_name(
-                getattr(employee, "employee_name", "")
-                or getattr(employee, "first_name", "")
-            ),
-            "designation":        _format_name(getattr(employee, "designation", "") or ""),
-            "date_of_joining":    fmt_date(date_of_joining),
-            "last_working_day":   fmt_date(last_working_day),
-            "tenure":             _tenure(date_of_joining, last_working_day),
-            "signatory_name":     _resolve_signatory_name(),
-        }
-    return {
-        "ref_number":     separation_doc.name,  # no employee context to fall back to
-        "current_date":   today_str(),
-        "employee_name":  "",
-        "designation":    "",
-        "date_of_joining": "",
-        "last_working_day": "",
-        "tenure":         "",
-        "signatory_name": _resolve_signatory_name(),
-    }
-
-
-def build_relieving_context(separation_doc) -> dict:
-    """Context for Relieving Letter — same shape as Experience but used for
-    a different document and slightly different content."""
-    return build_experience_context(separation_doc)
-
-
-def build_service_certificate_context(emp_doc) -> dict:
-    """Context for Service Certificate (current employee, mid-employment)."""
-    date_of_joining = getattr(emp_doc, "date_of_joining", None)
-    return {
-        "ref_number":      emp_doc.name,
-        "current_date":    today_str(),
-        "employee_name":   getattr(emp_doc, "employee_name", "") or "",
-        "designation":     getattr(emp_doc, "designation", "") or "",
-        "date_of_joining": fmt_date(date_of_joining),
-        "tenure_so_far":   _tenure(date_of_joining, None),  # None = up to today
-        "signatory_name":  _resolve_signatory_name(),
-    }
-
-
-def _tenure(start_date, end_date) -> str:
+def tenure_str(start_date, end_date) -> str:
     """Compute human-readable tenure: '2 years and 3 months'.
     end_date=None means up to today.
     """
@@ -706,136 +304,25 @@ def _tenure(start_date, end_date) -> str:
         return ""
 
 
-# ── Bench-callable smoke tests ───────────────────────────────────────────────
-
-class _FakeOffer:
-    """Hardcoded sample Job Offer used by the bench smoke tests."""
-    name = "OFR-SMOKE-TEST"
-    applicant_name = "Smoke Test Candidate"
-    designation = "Software Engineer"
-    department = "Engineering"
-    offer_date = "2026-05-20"
-    applicant = None
-    custom_date_of_joining = "2026-06-16"
-    custom_annual_ctc = 600000
-    custom_basic_monthly = 21600
-    custom_hra_monthly = 10800
-    custom_conveyance_allowance_monthly = 1600
-    custom_medical_allowance_monthly = 1250
-    custom_special_allowance_monthly = 7950
-    custom_employee_pf_monthly = 1800
-    custom_employee_esi_monthly = 0
-    custom_professional_tax_monthly = 200
-    custom_employer_pf = 1950
-    custom_employer_esiinsurance_monthly = 0
-    custom_pf_opted_out = False
-    custom_medical_insurance_opted_out = False
-    custom_medical_insurance_annual_premium = 10000
-    custom_work_location = "Hyderabad"
-    custom_band = "B3"
-
-
-def test_merge_only():
-    """
-    Smoke test — DOCX render only (no PDF conversion).
-
-    Verifies the template loads, docxtpl is installed, and all placeholders
-    have matching context keys. Writes /tmp/offer_smoke.docx.
-
-    Run:  bench --site hr-globexdigital execute globex_hr_letters.letters.merger.test_merge_only
-    """
-    template_path = os.path.join(_TEMPLATE_DIR, "offer_letter.docx")
-    out_path = os.path.join(tempfile.gettempdir(), "offer_smoke.docx")
-
-    if not os.path.exists(template_path):
-        print(f"FAIL: template missing at {template_path}")
-        return
-
-    ctx = build_offer_context(_FakeOffer())
-    tpl = DocxTemplate(template_path)
-    tpl.render(ctx)
-    tpl.save(out_path)
-
-    print(f"OK: rendered DOCX → {out_path}")
-    print(f"OK: docxtpl is installed and template merges cleanly")
-    print(f"OK: context has {len(ctx)} keys")
-
-
-def test_merge_to_pdf():
-    """
-    Smoke test — full DOCX → PDF flow via LibreOffice headless.
-
-    Writes /tmp/offer_smoke.pdf. If this fails, LibreOffice probably isn't
-    installed on the Frappe Cloud bench — open a support ticket or pivot
-    to sending the DOCX directly to Zoho Sign (which accepts .docx uploads).
-
-    Run:  bench --site hr-globexdigital execute globex_hr_letters.letters.merger.test_merge_to_pdf
-    """
-    out_path = os.path.join(tempfile.gettempdir(), "offer_smoke.pdf")
-    try:
-        pdf_bytes = merge_to_pdf("offer_letter.docx", build_offer_context(_FakeOffer()))
-    except Exception as exc:
-        print(f"FAIL: {type(exc).__name__}: {exc}")
-        return
-
-    with open(out_path, "wb") as f:
-        f.write(pdf_bytes)
-    print(f"OK: PDF generated ({len(pdf_bytes):,} bytes) → {out_path}")
-
-
 @frappe.whitelist()
 def health_check() -> dict:
     """
     HTTP-callable health check for the letter pipeline.
 
-    Verifies: docxtpl import, template file present, LibreOffice availability,
-    and full DOCX→PDF conversion with sample data.
+    Verifies: docxtpl import, WeasyPrint/libcairo availability, and the
+    shipped HTML template directory.
 
     Call from any logged-in browser:
         https://<site>/api/method/globex_hr_letters.letters.merger.health_check
-
-    Returns a JSON object with one boolean per check + diagnostic details.
     """
-    import subprocess
-
     result = {
         "docxtpl_installed": False,
         "docxtpl_version": None,
-        "template_exists": False,
-        "template_path": "",
-        "libreoffice_path": None,
-        "libreoffice_version": None,
-        "merge_only_ok": False,
-        "merge_to_pdf_ok": False,
-        "pdf_bytes": 0,
-        "job_offer_custom_fields_total": 0,
-        "expected_new_fields_present": [],
-        "expected_new_fields_missing": [],
+        "html_template_dir": _HTML_TEMPLATE_DIR,
+        "html_templates_found": [],
         "errors": [],
     }
 
-    # 0. Custom Field installation check
-    try:
-        all_jo_fields = frappe.get_all(
-            "Custom Field",
-            filters={"dt": "Job Offer"},
-            pluck="fieldname",
-        )
-        result["job_offer_custom_fields_total"] = len(all_jo_fields)
-        expected = {
-            "custom_band", "custom_work_location", "custom_reporting_to",
-            "custom_probation_period", "custom_notice_period",
-            "custom_joining_bonus", "custom_variable_pay_annual",
-            "custom_acceptance_deadline",
-        }
-        present = expected & set(all_jo_fields)
-        missing = expected - set(all_jo_fields)
-        result["expected_new_fields_present"] = sorted(present)
-        result["expected_new_fields_missing"] = sorted(missing)
-    except Exception as exc:
-        result["errors"].append(f"custom_field listing: {exc!r}")
-
-    # 1. docxtpl
     try:
         import docxtpl
         result["docxtpl_installed"] = True
@@ -843,46 +330,15 @@ def health_check() -> dict:
     except Exception as exc:
         result["errors"].append(f"docxtpl import: {exc!r}")
 
-    # 2. Template file present
-    template_path = os.path.join(_TEMPLATE_DIR, "offer_letter.docx")
-    result["template_path"] = template_path
-    result["template_exists"] = os.path.exists(template_path)
-    if not result["template_exists"]:
-        result["errors"].append(f"template missing at {template_path}")
-
-    # 3. LibreOffice on PATH
     try:
-        which = subprocess.run(["which", "libreoffice"], capture_output=True, text=True, timeout=5)
-        path = which.stdout.strip()
-        result["libreoffice_path"] = path or None
-        if path:
-            ver = subprocess.run(["libreoffice", "--version"], capture_output=True, text=True, timeout=10)
-            result["libreoffice_version"] = (ver.stdout or ver.stderr).strip()
+        result["html_templates_found"] = sorted(
+            f for f in os.listdir(_HTML_TEMPLATE_DIR)
+            if f.endswith(".html") and not f.startswith("_")
+        )
     except Exception as exc:
-        result["errors"].append(f"libreoffice check: {exc!r}")
+        result["errors"].append(f"template dir: {exc!r}")
 
-    # 4. DOCX merge only (no PDF)
-    if result["docxtpl_installed"] and result["template_exists"]:
-        try:
-            from docxtpl import DocxTemplate
-            tpl = DocxTemplate(template_path)
-            tpl.render(build_offer_context(_FakeOffer()))
-            with tempfile.NamedTemporaryFile(suffix=".docx", delete=True) as t:
-                tpl.save(t.name)
-            result["merge_only_ok"] = True
-        except Exception as exc:
-            result["errors"].append(f"merge_only: {exc!r}")
-
-    # 5. Full DOCX → PDF
-    if result["merge_only_ok"] and result["libreoffice_path"]:
-        try:
-            pdf = merge_to_pdf("offer_letter.docx", build_offer_context(_FakeOffer()))
-            result["merge_to_pdf_ok"] = True
-            result["pdf_bytes"] = len(pdf)
-        except Exception as exc:
-            result["errors"].append(f"merge_to_pdf: {exc!r}")
-
-    # 6. WeasyPrint / libcairo pre-flight (Phase A migration)
+    # WeasyPrint / libcairo pre-flight
     try:
         from .pdf_check import check_pdf_dependencies
         result.update(check_pdf_dependencies())

@@ -1,0 +1,207 @@
+{
+ "actions": [],
+ "autoname": "format:HR-LTR-{YYYY}-{####}",
+ "creation": "2026-07-11 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "letter_type",
+  "letter_date",
+  "status",
+  "column_break_main",
+  "recipient_type",
+  "recipient",
+  "recipient_name",
+  "uses_compensation_table",
+  "compensation_section",
+  "compensation",
+  "output_section",
+  "generated_pdf",
+  "filled_values",
+  "column_break_output",
+  "zoho_request_id",
+  "issued_on",
+  "issued_by",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "letter_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Letter Type",
+   "options": "Letter Type",
+   "reqd": 1
+  },
+  {
+   "default": "Today",
+   "description": "Date printed on the letter.",
+   "fieldname": "letter_date",
+   "fieldtype": "Date",
+   "label": "Letter Date",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nGenerated\nSent for Signature\nSigned\nIssued\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Employee",
+   "fieldname": "recipient_type",
+   "fieldtype": "Select",
+   "label": "Recipient Type",
+   "options": "Employee\nJob Applicant",
+   "reqd": 1
+  },
+  {
+   "fieldname": "recipient",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Recipient",
+   "options": "recipient_type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "recipient_name",
+   "fieldtype": "Data",
+   "label": "Recipient Name",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "letter_type.uses_compensation_table",
+   "fieldname": "uses_compensation_table",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Uses Compensation Table",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.uses_compensation_table",
+   "fieldname": "compensation_section",
+   "fieldtype": "Section Break",
+   "label": "Compensation Breakup (Annexure)"
+  },
+  {
+   "description": "Component-wise breakup rendered in the letter's compensation annexure. Fill monthly amounts; annual auto-computes as 12x when left blank.",
+   "fieldname": "compensation",
+   "fieldtype": "Table",
+   "label": "Compensation",
+   "options": "HR Letter Compensation Row"
+  },
+  {
+   "fieldname": "output_section",
+   "fieldtype": "Section Break",
+   "label": "Output"
+  },
+  {
+   "fieldname": "generated_pdf",
+   "fieldtype": "Attach",
+   "label": "Generated PDF",
+   "read_only": 1
+  },
+  {
+   "description": "Values HR supplied for template placeholders that could not be auto-resolved.",
+   "fieldname": "filled_values",
+   "fieldtype": "JSON",
+   "label": "Filled Values",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_output",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "zoho_request_id",
+   "fieldtype": "Data",
+   "label": "Zoho Sign Request ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issued_on",
+   "fieldtype": "Datetime",
+   "label": "Issued On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "issued_by",
+   "fieldtype": "Link",
+   "label": "Issued By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "HR Letter",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-11 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "HR Letters",
+ "name": "HR Letter",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "recipient_name",
+ "track_changes": 1
+}
