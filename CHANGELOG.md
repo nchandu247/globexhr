@@ -8,6 +8,25 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-11 — Install fix: HR Letter controller import path
+
+First install on the test site (`gdshr.m.frappe.cloud`) aborted at 20% with
+`No module named 'globex_hr_letters.hr_letters.letters'`. Root cause:
+`hr_letter.py` used `from ...letters import engine` — three dots resolve to
+`globex_hr_letters.hr_letters`, not the app package, so the import pointed
+inside the module folder. Local suite never caught it because no test
+imported the controller modules.
+
+- ✅ Fix: absolute import `from globex_hr_letters.letters import engine`.
+- ✅ New `tests/test_controller_imports.py` — imports every
+  `hr_letters/doctype/*/*.py` controller (plus a discovery-count guard), so
+  this bug class now fails offline. Verified: reintroducing the bad import
+  fails the sweep.
+- ✅ `tests/conftest.py` — real `_MockDocument` class registered at
+  `frappe.model.document.Document` (controllers subclass it; MagicMock can't
+  be a base class).
+- ✅ Test suite: **76 passing** (was 71).
+
 ### 2026-07-11 — Standalone pivot: globex_hr_letters
 
 - ✅ **Pivot (spec 2026-07-10):** removed the entire greytHR integration

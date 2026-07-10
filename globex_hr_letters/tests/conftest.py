@@ -27,6 +27,19 @@ _frappe_utils_password.set_encrypted_password = MagicMock()
 sys.modules.setdefault("frappe.utils", MagicMock())
 sys.modules.setdefault("frappe.utils.password", _frappe_utils_password)
 
+
+# `frappe.model.document.Document` is subclassed by DocType controllers —
+# a MagicMock can't be a base class, so provide a real (empty) one.
+class _MockDocument:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+_frappe_model_document = MagicMock()
+_frappe_model_document.Document = _MockDocument
+sys.modules.setdefault("frappe.model", MagicMock())
+sys.modules.setdefault("frappe.model.document", _frappe_model_document)
+
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture()

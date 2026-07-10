@@ -21,7 +21,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from ...letters import engine
+from globex_hr_letters.letters import engine
 
 
 class HRLetter(Document):
