@@ -9,4 +9,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: pytest greythr_bridge/tests/ -v
+      - run: pytest globex_hr_letters/tests/ -v
