@@ -14,6 +14,9 @@ keys.txt
 *.pem
 credentials.json
 
+# Payroll compliance PDFs — employee PII, never commit (DPDP)
+compliance/
+
 # Local Claude Code config
 .claude/
 
