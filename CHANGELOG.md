@@ -8,6 +8,13 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Fix: Generate overlay never cleared
+
+`run_generate` chained `.finally` onto `frm.call`'s jQuery-style promise,
+which has no such method — a TypeError after the request fired left the
+"Generating letter..." freeze up forever while the letter generated fine
+server-side. Two-arg `.then` now unfreezes + reloads on success or error.
+
 ### 2026-07-13 — Annexure with deductions + footer cleanup
 
 - ✅ Compensation child table gains a **Type** column (Earning/Deduction,

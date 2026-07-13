@@ -81,7 +81,11 @@ function generate_letter(frm) {
 
 function run_generate(frm, values) {
 	frappe.dom.freeze(__("Generating letter..."));
-	frm.call("generate_letter", { values: values })
-		.then(() => frm.reload_doc())
-		.finally(() => frappe.dom.unfreeze());
+	// frm.call returns a jQuery-style promise — no .finally. Two-arg .then
+	// so the freeze always clears, success or error.
+	const done = () => {
+		frappe.dom.unfreeze();
+		frm.reload_doc();
+	};
+	frm.call("generate_letter", { values: values }).then(done, done);
 }
