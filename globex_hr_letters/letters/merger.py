@@ -176,11 +176,12 @@ def docx_bytes_to_pdf(docx_bytes: bytes) -> bytes:
 
 def _append_zoho_signature_tags(docx_path: str) -> None:
     """
-    Append a paragraph at the end of the DOCX with Zoho Sign text tags.
+    Append a paragraph at the end of the DOCX with the Zoho Sign text tag.
 
-    Tags:
-      {{S:R1*}}  — mandatory Signature field for recipient 1 (HR signatory)
-      {{S:R2*}}  — mandatory Signature field for recipient 2 (letter recipient)
+    Tag:
+      {{S:R1*}}  — mandatory Signature field for the sole signer (the
+                   letter recipient). The company signature is stamped at
+                   generation, not e-signed (decision 2026-07-13).
 
     Tags are rendered in white text so they are invisible in the rendered
     PDF (white-on-white) while Zoho still parses them from the document
@@ -194,7 +195,7 @@ def _append_zoho_signature_tags(docx_path: str) -> None:
 
     doc = Document(docx_path)
     para = doc.add_paragraph()
-    run = para.add_run("{{S:R1*}}                    {{S:R2*}}")
+    run = para.add_run("{{S:R1*}}")
     run.font.size = Pt(8)
     run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)  # white = invisible on white page
     doc.save(docx_path)

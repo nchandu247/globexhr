@@ -145,13 +145,49 @@ def _signatory_context(letter_type, settings) -> dict:
         return {
             "signatory_name": letter_type.signatory_name or "",
             "signatory_designation": letter_type.signatory_designation or "",
-            "signature_image": letter_type.signature_image or "",
+            "signature_image": _signature_image_data_uri(letter_type.signature_image),
         }
     return {
         "signatory_name": settings.signatory_name or "Authorised Signatory",
         "signatory_designation": settings.signatory_designation or "",
-        "signature_image": settings.signature_image or "",
+        "signature_image": _signature_image_data_uri(settings.signature_image),
     }
+
+
+_IMAGE_MIME_BY_EXT = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "svg": "image/svg+xml",
+}
+
+
+def _signature_image_data_uri(file_url) -> str:
+    """
+    Resolve an Attach Image file_url (usually /private/files/...) to a
+    data: URI. The signature is stamped on every letter at generation
+    (approved internally before creation — decision 2026-07-13), and
+    WeasyPrint can't fetch private URLs: its base_url points at the
+    template dir, not the site.
+    """
+    if not file_url or not isinstance(file_url, str):
+        return ""
+    if file_url.startswith("data:"):
+        return file_url
+    try:
+        import base64
+        content = frappe.get_doc("File", {"file_url": file_url}).get_content()
+        if isinstance(content, str):
+            content = content.encode()
+        ext = os.path.splitext(file_url)[1].lower().lstrip(".")
+        mime = _IMAGE_MIME_BY_EXT.get(ext, "image/png")
+        return f"data:{mime};base64,{base64.b64encode(content).decode()}"
+    except Exception as exc:
+        # Letter still renders (templates guard with {% if signature_image %});
+        # log so HR learns why the stamp is missing.
+        log_error(
+            f"Signature image could not be embedded: {str(exc)[:120]}",
+            "HR Letters Render",
+        )
+        return ""
 
 
 def _recipient_context(recipient_type: str, doc) -> dict:
@@ -407,7 +443,10 @@ def dispatch_signature(hr_letter_name: str) -> None:
     """
     Background job: send the generated letter to Zoho Sign.
 
-    Signers: R1 = company signatory (from Settings), R2 = the recipient.
+    Single signer: the recipient (R1). The company signature is stamped
+    on the PDF at generation — the letter is approved internally before
+    it is created, so the signatory does not e-sign in Zoho
+    (decision 2026-07-13).
     Idempotent: skips when zoho_request_id is already set.
     """
     hr_letter = frappe.get_doc("HR Letter", hr_letter_name)
@@ -428,10 +467,6 @@ def dispatch_signature(hr_letter_name: str) -> None:
             f"No email address found for {hr_letter.recipient_type} "
             f"{hr_letter.recipient}. Set one and retry."
         )
-    signatory_email = settings.signatory_email
-    if not signatory_email:
-        frappe.throw("Signatory Email is not set in HR Letters Settings.")
-
     context = build_context(hr_letter, letter_type)
     if letter_type.render_engine == "HTML":
         file_bytes = merge_to_pdf_via_html(letter_type.html_template, context)
@@ -448,10 +483,8 @@ def dispatch_signature(hr_letter_name: str) -> None:
         file_bytes=file_bytes,
         document_name=f"{letter_type.name} - {context.get('recipient_name', hr_letter.recipient)}",
         signers=[
-            {"name": context.get("signatory_name", "Authorised Signatory"),
-             "email": signatory_email, "order": 1},
             {"name": context.get("recipient_name", ""),
-             "email": recipient_email, "order": 2},
+             "email": recipient_email, "order": 1},
         ],
         metadata={"doctype": "HR Letter", "docname": hr_letter.name,
                   "letter_type": hr_letter.letter_type},

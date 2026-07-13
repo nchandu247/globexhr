@@ -85,7 +85,7 @@
   <div class="signer">
     <p class="signer-name">Yours sincerely,<br>For Globex Digital Solutions Pvt Ltd</p>
     <div class="sig-area">
-      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+      {% if signature_image %}<img class="hr-sig-image" src="{{ signature_image }}" alt="">{% endif %}
     </div>
     <div class="signer-line">
       <span class="signer-label">Authorised Signatory</span><br>
@@ -95,7 +95,7 @@
   <div class="signer">
     <p class="signer-name">{{ candidate_name }}</p>
     <div class="sig-area">
-      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
     </div>
     <div class="signer-line">
       <span class="signer-label">Intern Signature</span><br>

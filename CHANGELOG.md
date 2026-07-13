@@ -8,6 +8,29 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Stamped company signature; candidate-only Zoho signing
+
+Owner decision: letters are approved internally before creation, so the
+company signature is stamped on the PDF at generation and only the
+recipient e-signs in Zoho.
+
+- ✅ Engine embeds the Settings/Letter-Type **signature image as a data URI**
+  (`_signature_image_data_uri`) — private `/private/files/` URLs aren't
+  reachable from WeasyPrint. Load failure logs + renders without stamp.
+- ✅ **All 14 templates** show the stamped image: static `hr_signature.png`
+  references replaced with `{{ signature_image }}` (6 plain templates), and
+  the company signer's Zoho tag replaced with the image (8 signature
+  templates). Offer letter also prints `{{ signatory_name }}` in both
+  signature blocks.
+- ✅ **Zoho flow is single-signer**: recipient tags flipped R2→R1,
+  `dispatch_signature` sends one signer (recipient, order 1), signatory
+  email no longer required for dispatch; DOCX tag append emits `{{S:R1*}}`
+  only. Faster turnaround — no waiting on the internal signer.
+- ✅ Settings field descriptions updated (signatory_email / signature_image).
+- ✅ Tests: data-URI helper (3), dispatch single-signer + idempotency guard
+  (first coverage of `dispatch_signature` — closes a hard-rule-9 gap).
+  Suite: **95 passing** (was 90).
+
 ### 2026-07-13 — Phase 2: Job Offer integration (A1/A2)
 
 - ✅ **Offer terms typed once** (`engine._job_offer_context`): candidate

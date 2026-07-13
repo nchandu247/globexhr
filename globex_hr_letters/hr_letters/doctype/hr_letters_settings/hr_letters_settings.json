@@ -89,13 +89,14 @@
    "label": "Signatory Designation"
   },
   {
-   "description": "Email address that receives the Zoho Sign request as the company signer (signs first).",
+   "description": "Contact email of the default signatory. Not a Zoho signer - the company signature is stamped on the letter at generation; only the recipient e-signs.",
    "fieldname": "signatory_email",
    "fieldtype": "Data",
    "label": "Signatory Email",
    "options": "Email"
   },
   {
+   "description": "Stamped on every generated letter as the company signature (letters are approved internally before creation).",
    "fieldname": "signature_image",
    "fieldtype": "Attach Image",
    "label": "Signature Image"
@@ -130,7 +131,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Cached OAuth access token. Managed automatically — do not edit.",
+   "description": "Cached OAuth access token. Managed automatically \u00e2\u20ac\u201d do not edit.",
    "fieldname": "zoho_sign_access_token",
    "fieldtype": "Password",
    "label": "Access Token (Cached)",

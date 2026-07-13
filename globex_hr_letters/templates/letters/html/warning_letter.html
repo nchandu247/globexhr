@@ -43,7 +43,7 @@
 
 <div class="hr-sig-block">
   <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
-  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
+  {% if signature_image %}<img class="hr-sig-image" src="{{ signature_image }}" alt="">{% endif %}
   <div class="hr-sig-line">
     <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
   </div>

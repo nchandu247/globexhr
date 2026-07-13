@@ -389,3 +389,77 @@ def test_format_term_value_only_formats_amountish_numbers():
     assert engine._format_term_value("Probation Period", "6") == "6"
     assert engine._format_term_value("Monthly Stipend", "25000") == "25,000"
     assert engine._format_term_value("Work Location", "Hyderabad") == "Hyderabad"
+
+
+# ── stamped signature + single-signer dispatch (decision 2026-07-13) ──────────
+
+def test_signature_image_becomes_data_uri(patch_frappe):
+    """Private file_url resolves to a data: URI WeasyPrint can embed."""
+    file_doc = MagicMock()
+    file_doc.get_content.return_value = b"\x89PNGfake"
+    patch_frappe.get_doc.side_effect = lambda *a, **k: file_doc
+
+    uri = engine._signature_image_data_uri("/private/files/sig.png")
+
+    assert uri.startswith("data:image/png;base64,")
+    import base64
+    assert base64.b64decode(uri.split(",")[1]) == b"\x89PNGfake"
+
+
+def test_signature_image_empty_or_nonstring_gives_blank():
+    assert engine._signature_image_data_uri("") == ""
+    assert engine._signature_image_data_uri(None) == ""
+    assert engine._signature_image_data_uri(MagicMock()) == ""
+
+
+def test_signature_image_load_failure_logs_and_blanks(patch_frappe):
+    patch_frappe.get_doc.side_effect = RuntimeError("file gone")
+    assert engine._signature_image_data_uri("/private/files/gone.png") == ""
+
+
+def test_dispatch_signature_sends_single_recipient_signer(monkeypatch, patch_frappe, settings):
+    """Company signature is stamped at generation — Zoho request carries
+    exactly one signer: the recipient, order 1."""
+    letter = _hr_letter(zoho_request_id=None)
+    letter_type = _letter_type(category="Onboarding")
+    employee = _employee()
+    employee.company_email = "sudha@globexdigital.ai"  # resolve_recipient_email uses getattr
+
+    def fake_get_doc(dt, name=None, *a, **k):
+        if dt == "HR Letter":
+            return letter
+        if dt == "Letter Type":
+            return letter_type
+        return employee
+    patch_frappe.get_doc.side_effect = fake_get_doc
+    patch_frappe.get_all.return_value = []
+    patch_frappe.get_all.side_effect = None
+
+    monkeypatch.setattr(engine, "merge_to_pdf_via_html", lambda *a, **k: b"%PDF-fake")
+
+    sent = {}
+    import globex_hr_letters.api.zoho_sign as zs
+
+    def fake_send(**kwargs):
+        sent.update(kwargs)
+        return "REQ-SINGLE"
+    monkeypatch.setattr(zs, "send_for_signature", fake_send)
+
+    engine.dispatch_signature("HR-LTR-2026-0001")
+
+    assert [s["order"] for s in sent["signers"]] == [1], \
+        "exactly one signer, order 1 — the recipient"
+    assert sent["signers"][0]["email"] == "sudha@globexdigital.ai"
+    assert sent["signers"][0]["name"] == "Nalluri Sudha"
+    letter.db_set.assert_any_call("zoho_request_id", "REQ-SINGLE")
+    letter.db_set.assert_any_call("status", "Sent for Signature")
+
+
+def test_dispatch_signature_idempotent(patch_frappe):
+    """Already-dispatched letters (zoho_request_id set) are skipped."""
+    letter = _hr_letter(zoho_request_id="REQ-EXISTING")
+    patch_frappe.get_doc.side_effect = lambda *a, **k: letter
+
+    engine.dispatch_signature("HR-LTR-2026-0001")
+
+    letter.db_set.assert_not_called()
