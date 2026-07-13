@@ -316,7 +316,9 @@ ol.clauses li {
   margin-top: 10mm;
   page-break-inside: avoid;
 }
-.hr-sig-block .hr-sig-image {
+/* Unscoped: the stamped signature also appears inside
+   .signature-block .sig-area (Zoho letters) — same size everywhere. */
+.hr-sig-image {
   height: 14mm;
   width: auto;
   margin-bottom: 1mm;
