@@ -8,6 +8,20 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Annexure with deductions + footer cleanup
+
+- ✅ Compensation child table gains a **Type** column (Earning/Deduction,
+  default Earning — old rows unaffected). Engine splits totals: Monthly
+  Gross (A), Deductions (B), Monthly Net (A - B); Annual CTC = earnings.
+- ✅ Offer + Appointment annexure restructured to the approved sample:
+  Salary Break Up → Monthly Gross (A) → Employee Deductions → Deductions
+  (B) → Monthly Net (A - B) → Annual CTC. Deductions section renders only
+  when deduction rows exist. Columns retitled Per Month / Yearly.
+- ✅ Footer: left-aligned with the content/logo margin, extra padding above
+  the page edge (was centered and cramped).
+- ✅ Patch re-listed for the child-doctype schema change. Tests: **97
+  passing** (was 95).
+
 ### 2026-07-13 — Stamped company signature; candidate-only Zoho signing
 
 Owner decision: letters are approved internally before creation, so the

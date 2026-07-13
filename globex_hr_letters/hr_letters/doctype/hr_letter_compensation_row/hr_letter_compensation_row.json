@@ -5,17 +5,27 @@
  "engine": "InnoDB",
  "field_order": [
   "component",
+  "component_type",
   "monthly_amount",
   "annual_amount"
  ],
  "fields": [
   {
-   "columns": 4,
+   "columns": 3,
    "fieldname": "component",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Component",
    "reqd": 1
+  },
+  {
+   "columns": 2,
+   "default": "Earning",
+   "fieldname": "component_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type",
+   "options": "Earning\nDeduction"
   },
   {
    "columns": 3,
@@ -25,7 +35,7 @@
    "label": "Monthly (INR)"
   },
   {
-   "columns": 3,
+   "columns": 2,
    "fieldname": "annual_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,

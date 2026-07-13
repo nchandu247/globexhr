@@ -192,16 +192,24 @@
   <thead>
     <tr>
       <th>Salary Component</th>
-      <th class="numeric">Monthly (&#8377;)</th>
-      <th class="numeric">Annually (&#8377;)</th>
+      <th class="numeric">Per Month (&#8377;)</th>
+      <th class="numeric">Yearly (&#8377;)</th>
     </tr>
   </thead>
   <tbody>
-    <tr class="section-header"><td colspan="3">Compensation</td></tr>
+    <tr class="section-header"><td colspan="3">Salary Break Up</td></tr>
     {% for row in compensation %}
     <tr><td>{{ row.component }}</td><td class="numeric">{{ row.monthly }}</td><td class="numeric">{{ row.annual }}</td></tr>
     {% endfor %}
-    <tr class="subtotal"><td>Gross Total</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
+    <tr class="subtotal"><td>Monthly Gross (A)</td><td class="numeric">{{ gross_monthly }}</td><td class="numeric">{{ gross_annual }}</td></tr>
+    {% if deductions %}
+    <tr class="section-header"><td colspan="3">Employee Deductions</td></tr>
+    {% for row in deductions %}
+    <tr><td>{{ row.component }}</td><td class="numeric">{{ row.monthly }}</td><td class="numeric">{{ row.annual }}</td></tr>
+    {% endfor %}
+    <tr class="subtotal"><td>Deductions (B)</td><td class="numeric">{{ deductions_monthly }}</td><td class="numeric">{{ deductions_annual }}</td></tr>
+    <tr class="subtotal"><td>Monthly Net (A - B)</td><td class="numeric">{{ net_monthly }}</td><td class="numeric">{{ net_annual }}</td></tr>
+    {% endif %}
     <tr class="total"><td>Annual CTC</td><td class="numeric">&nbsp;</td><td class="numeric">{{ annual_ctc }}</td></tr>
   </tbody>
 </table>

@@ -463,3 +463,43 @@ def test_dispatch_signature_idempotent(patch_frappe):
     engine.dispatch_signature("HR-LTR-2026-0001")
 
     letter.db_set.assert_not_called()
+
+
+# ── deductions in the compensation annexure (2026-07-13) ──────────────────────
+
+def _ded_row(component, monthly, annual=None):
+    return SimpleNamespace(
+        component=component, monthly_amount=monthly, annual_amount=annual,
+        component_type="Deduction",
+    )
+
+
+def test_compensation_splits_earnings_and_deductions():
+    """Sample-format annexure: Monthly Gross (A), Deductions (B),
+    Monthly Net (A - B). Rows without component_type stay earnings."""
+    letter = _hr_letter(compensation=[
+        _comp_row("Basic", 12000),
+        _comp_row("HRA", 6000),
+        _comp_row("Special Allowance", 12000),
+        _ded_row("Professional Tax", 200),
+    ])
+    ctx = engine._compensation_context(letter)
+
+    assert [r["component"] for r in ctx["compensation"]] == [
+        "Basic", "HRA", "Special Allowance"]
+    assert [r["component"] for r in ctx["deductions"]] == ["Professional Tax"]
+    assert ctx["gross_monthly"] == fmt_inr(30000)
+    assert ctx["gross_annual"] == fmt_inr(360000)
+    assert ctx["deductions_monthly"] == fmt_inr(200)
+    assert ctx["deductions_annual"] == fmt_inr(2400)
+    assert ctx["net_monthly"] == fmt_inr(29800)
+    assert ctx["net_annual"] == fmt_inr(357600)
+    assert ctx["annual_ctc"] == fmt_inr(360000)  # CTC = earnings only
+
+
+def test_compensation_no_deductions_keeps_empty_list():
+    ctx = engine._compensation_context(_hr_letter(compensation=[
+        _comp_row("Basic", 10000),
+    ]))
+    assert ctx["deductions"] == []
+    assert ctx["net_monthly"] == ctx["gross_monthly"]

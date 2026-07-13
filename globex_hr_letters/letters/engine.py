@@ -323,24 +323,35 @@ def _compensation_context(hr_letter) -> dict:
     Indian-comma amounts, rendered in templates via
     {% for row in compensation %}.
     """
-    rows = []
-    gross_monthly = 0.0
-    gross_annual = 0.0
+    earnings, deductions = [], []
+    gross_monthly = gross_annual = ded_monthly = ded_annual = 0.0
     for row in (hr_letter.compensation or []):
         monthly = float(row.monthly_amount or 0)
         annual = float(row.annual_amount or 0) or monthly * 12
-        gross_monthly += monthly
-        gross_annual += annual
-        rows.append({
+        entry = {
             "component": row.component,
             "monthly": fmt_inr(monthly),
             "annual": fmt_inr(annual),
-        })
+        }
+        # Rows created before the component_type column default to Earning.
+        if (getattr(row, "component_type", None) or "Earning") == "Deduction":
+            deductions.append(entry)
+            ded_monthly += monthly
+            ded_annual += annual
+        else:
+            earnings.append(entry)
+            gross_monthly += monthly
+            gross_annual += annual
 
     return {
-        "compensation": rows,
+        "compensation": earnings,
+        "deductions": deductions,
         "gross_monthly": fmt_inr(gross_monthly),
         "gross_annual": fmt_inr(gross_annual),
+        "deductions_monthly": fmt_inr(ded_monthly),
+        "deductions_annual": fmt_inr(ded_annual),
+        "net_monthly": fmt_inr(gross_monthly - ded_monthly),
+        "net_annual": fmt_inr(gross_annual - ded_annual),
         "annual_ctc": fmt_inr(gross_annual),
         "monthly_ctc": fmt_inr(round(gross_annual / 12) if gross_annual else 0),
     }

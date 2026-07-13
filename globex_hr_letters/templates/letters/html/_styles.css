@@ -88,11 +88,12 @@ strong { font-weight: 600; }
   position: running(footer);
   font-size: 8pt;
   color: #555;
-  text-align: center;
+  text-align: left;          /* align with the content/logo left margin */
   border-top: 0.5pt solid #ccc;
-  padding-top: 1.5mm;
+  padding-top: 2mm;
+  padding-bottom: 4mm;       /* breathing room above the page edge */
   width: 100%;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 .footer .company-name {
   font-weight: 600;
