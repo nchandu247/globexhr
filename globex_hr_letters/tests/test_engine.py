@@ -315,3 +315,77 @@ def test_generate_blocks_employee_letter_with_malformed_greythr_id(patch_frappe,
     thrown = str(patch_frappe.throw.call_args)
     assert "greytHR" in thrown
     patch_frappe.throw.side_effect = None
+
+
+# ── Job Offer context (decision A1, 2026-07-13) ───────────────────────────────
+
+from globex_hr_letters.letters.merger import fmt_date as _fmt_date
+
+
+def _job_offer(terms=None, **fields):
+    values = {
+        "designation": "Senior Consultant",
+        "offer_date": "2026-07-20",
+        "company": "Globex Digital Solutions Pvt. Ltd.",
+    }
+    values.update(fields)
+    offer = FakeRecipient("JO-0001", values)
+    offer._values["offer_terms"] = [
+        SimpleNamespace(offer_term=t, value=v) for t, v in (terms or {}).items()
+    ]
+    return offer
+
+
+def test_job_offer_context_maps_terms_and_formats(patch_frappe):
+    """Offer terms typed once on the Job Offer resolve as placeholders:
+    labels scrub to snake_case, ISO dates format as letter dates, amounts
+    on amount-ish terms get Indian commas, prose passes through."""
+    offer = _job_offer(terms={
+        "Date of Joining": "2026-08-01",
+        "Annual CTC": "1200000",
+        "Work Location": "Hyderabad",
+        "Notice Period": "90 days",
+        "Probation Period": "6 months",
+    })
+    patch_frappe.get_all.return_value = [{"name": "JO-0001"}]
+    patch_frappe.get_all.side_effect = None
+    patch_frappe.get_doc.side_effect = lambda dt, name=None, *a, **k: offer
+
+    ctx = engine._job_offer_context("Job Applicant", "JA-0007")
+
+    assert ctx["designation"] == "Senior Consultant"
+    assert ctx["offer_date"] == _fmt_date("2026-07-20")
+    assert ctx["company"] == "Globex Digital Solutions Pvt. Ltd."
+    assert ctx["date_of_joining"] == _fmt_date("2026-08-01")
+    assert ctx["annual_ctc"] == "12,00,000"
+    assert ctx["work_location"] == "Hyderabad"
+    assert ctx["notice_period"] == "90 days"
+    assert ctx["probation_period"] == "6 months"
+
+
+def test_job_offer_context_only_for_job_applicants():
+    assert engine._job_offer_context("Employee", "GDS0021") == {}
+
+
+def test_job_offer_context_empty_when_no_offer(patch_frappe):
+    patch_frappe.get_all.return_value = []
+    patch_frappe.get_all.side_effect = None
+    assert engine._job_offer_context("Job Applicant", "JA-0007") == {}
+
+
+def test_job_offer_skips_blank_terms(patch_frappe):
+    offer = _job_offer(terms={"Notice Period": "", "Band": "L4"})
+    patch_frappe.get_all.return_value = [{"name": "JO-0001"}]
+    patch_frappe.get_all.side_effect = None
+    patch_frappe.get_doc.side_effect = lambda dt, name=None, *a, **k: offer
+
+    ctx = engine._job_offer_context("Job Applicant", "JA-0007")
+    assert "notice_period" not in ctx      # blank value → prompt supplies it
+    assert ctx["band"] == "L4"
+
+
+def test_format_term_value_only_formats_amountish_numbers():
+    assert engine._format_term_value("Annual CTC", "1200000") == "12,00,000"
+    assert engine._format_term_value("Probation Period", "6") == "6"
+    assert engine._format_term_value("Monthly Stipend", "25000") == "25,000"
+    assert engine._format_term_value("Work Location", "Hyderabad") == "Hyderabad"

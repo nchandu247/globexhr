@@ -8,6 +8,29 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Phase 2: Job Offer integration (A1/A2)
+
+- ✅ **Offer terms typed once** (`engine._job_offer_context`): candidate
+  letters now resolve placeholders from the latest non-rejected **Job Offer**
+  linked to the Job Applicant — doc fields (designation, offer_date, company)
+  plus every Job Offer Term row, label scrubbed to snake_case
+  ("Date of Joining" → `date_of_joining`). ISO-date values format as letter
+  dates; numeric values on amount-ish terms (CTC/salary/stipend/fees) get
+  Indian commas. Precedence: beats raw applicant fields, loses to
+  compensation table and filled_values.
+  **HR usage:** name Offer Terms to match template placeholders — Date of
+  Joining, Annual CTC, Work Location, Notice Period, Probation Period.
+- ✅ **Signed candidate letter = accepted offer**
+  (`webhooks/zoho_sign._mark_offer_accepted`): RequestCompleted for a Job
+  Applicant letter flips the applicant (and their latest Job Offer) to
+  **Accepted** and opens a ToDo per HR Manager — "onboard as Employee on
+  joining day, record greytHR ID". Runs before the PDF download so a fetch
+  failure can't lose the acceptance.
+- ✅ **Signed PDF attaches to the Job Applicant record** too (was
+  Employee-only) — the signed-offer trail follows the person.
+- ✅ Tests: 7 new (Job Offer context mapping/formatting/edge cases,
+  acceptance flow, ToDo-failure isolation). Suite: **90 passing** (was 83).
+
 ### 2026-07-13 — Phase 1: greytHR Employee ID handling (B3/B4/B5) + amend fix
 
 - ✅ **Employee ID validation** (`hooks_handlers/employee.py`): new

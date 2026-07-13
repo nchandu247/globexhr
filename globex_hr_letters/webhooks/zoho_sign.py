@@ -149,6 +149,14 @@ def _handle_completed(letter_name: str, request_id: str) -> None:
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
 
+        letter = frappe.get_doc("HR Letter", letter_name)
+
+        # A signed candidate letter is an accepted offer (decision A2,
+        # 2026-07-13). Runs before the PDF download so a Zoho fetch
+        # failure can't lose the acceptance.
+        if letter.recipient_type == "Job Applicant":
+            _mark_offer_accepted(letter)
+
         pdf_bytes = get_signed_document(request_id)
         if not pdf_bytes:
             log_error(
@@ -157,16 +165,18 @@ def _handle_completed(letter_name: str, request_id: str) -> None:
             )
             return
 
-        letter = frappe.get_doc("HR Letter", letter_name)
         letter_type = letter.letter_type.replace("/", "-")
         file_doc = attach_pdf(
             f"{letter_type} - Signed - {letter.recipient}.pdf",
             pdf_bytes,
             "HR Letter",
             letter_name,
+            # Signed PDF also lands on the person's record — Employee or
+            # Job Applicant — so the signed-offer trail follows them.
             also_attach_to=(
-                ("Employee", letter.recipient)
-                if letter.recipient_type == "Employee" else None
+                (letter.recipient_type, letter.recipient)
+                if letter.recipient_type in ("Employee", "Job Applicant")
+                else None
             ),
         )
         _safe_set_value("HR Letter", letter_name, "generated_pdf", file_doc.file_url)
@@ -209,18 +219,66 @@ def _handle_expired(letter_name: str) -> None:
         )
 
 
-def _notify_hr(message: str) -> None:
-    """Send a Frappe alert to all HR Managers."""
-    managers = frappe.get_all(
+def _mark_offer_accepted(letter) -> None:
+    """
+    Decision A2 (2026-07-13): candidate signing = offer accepted. Flip the
+    Job Applicant (and their latest Job Offer, if any) to Accepted and
+    open a ToDo per HR Manager so the joining-day onboarding — create
+    Employee, record greytHR ID — has a worklist instead of relying on
+    someone noticing the Signed letter.
+    """
+    _safe_set_value("Job Applicant", letter.recipient, "status", "Accepted")
+    try:
+        offers = frappe.get_all(
+            "Job Offer",
+            filters={"job_applicant": letter.recipient, "docstatus": ["<", 2]},
+            fields=["name"],
+            order_by="modified desc",
+            limit=1,
+        )
+        if offers:
+            _safe_set_value("Job Offer", offers[0]["name"], "status", "Accepted")
+
+        for user in _hr_manager_users():
+            todo = frappe.new_doc("ToDo")
+            todo.allocated_to = user
+            todo.reference_type = "HR Letter"
+            todo.reference_name = letter.name
+            todo.description = (
+                f"Candidate signed {letter.letter_type} ({letter.name}). "
+                f"On joining day: onboard {letter.recipient} as an Employee "
+                "and record the greytHR Employee ID."
+            )
+            todo.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception as exc:
+        try:
+            frappe.db.rollback()
+        except Exception:
+            pass
+        log_error(
+            f"_mark_offer_accepted: {letter.name} error={str(exc)[:200]}",
+            "HR Letters Webhook Error",
+        )
+
+
+def _hr_manager_users() -> list:
+    """User IDs holding the HR Manager role."""
+    rows = frappe.get_all(
         "Has Role",
         filters={"role": "HR Manager", "parenttype": "User"},
         fields=["parent"],
     )
-    for row in managers:
+    return [row["parent"] for row in rows]
+
+
+def _notify_hr(message: str) -> None:
+    """Send a Frappe alert to all HR Managers."""
+    for user in _hr_manager_users():
         frappe.publish_realtime(
             "eval_js",
             f'frappe.show_alert({{message: {frappe.as_json(message)}, indicator: "orange"}})',
-            user=row["parent"],
+            user=user,
         )
 
 

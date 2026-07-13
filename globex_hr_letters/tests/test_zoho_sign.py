@@ -515,3 +515,72 @@ def test_resolve_hr_letter_by_request_id(patch_frappe):
     patch_frappe.db.get_value.return_value = None
     assert _resolve_hr_letter("REQ-UNKNOWN") == ""
     assert _resolve_hr_letter("") == ""
+
+
+# ── signed candidate letter = accepted offer (decision A2, 2026-07-13) ────────
+
+def test_mark_offer_accepted_flips_applicant_offer_and_creates_todos(patch_frappe):
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
+
+    def fake_get_all(doctype, **kwargs):
+        if doctype == "Job Offer":
+            return [{"name": "JO-0001"}]
+        if doctype == "Has Role":
+            return [{"parent": "hrmanager@globexdigital.ai"}]
+        return []
+    patch_frappe.get_all.side_effect = fake_get_all
+
+    todo = MagicMock()
+    patch_frappe.new_doc.return_value = todo
+
+    letter = MagicMock()
+    letter.name = "HR-LTR-2026-0009"
+    letter.letter_type = "Offer Letter"
+    letter.recipient = "JA-0007"
+    letter.recipient_type = "Job Applicant"
+
+    from globex_hr_letters.webhooks.zoho_sign import _mark_offer_accepted
+    _mark_offer_accepted(letter)
+
+    set_calls = patch_frappe.db.set_value.call_args_list
+    assert any(
+        c.args[:4] == ("Job Applicant", "JA-0007", "status", "Accepted")
+        for c in set_calls
+    ), "Job Applicant must flip to Accepted"
+    assert any(
+        c.args[:4] == ("Job Offer", "JO-0001", "status", "Accepted")
+        for c in set_calls
+    ), "Linked Job Offer must flip to Accepted"
+
+    assert patch_frappe.new_doc.call_args.args[0] == "ToDo"
+    assert todo.insert.called, "Onboarding ToDo must be created"
+    assert todo.reference_name == "HR-LTR-2026-0009"
+    assert todo.allocated_to == "hrmanager@globexdigital.ai"
+
+    patch_frappe.get_all.side_effect = None
+
+
+def test_mark_offer_accepted_survives_todo_failure(patch_frappe):
+    """Applicant status flip must not be lost if ToDo creation errors —
+    the block logs and rolls back only the ToDo part."""
+    meta = MagicMock()
+    meta.has_field.return_value = True
+    patch_frappe.get_meta.return_value = meta
+    patch_frappe.get_all.side_effect = RuntimeError("db down")
+
+    letter = MagicMock()
+    letter.name = "HR-LTR-2026-0010"
+    letter.recipient = "JA-0008"
+    letter.recipient_type = "Job Applicant"
+
+    from globex_hr_letters.webhooks.zoho_sign import _mark_offer_accepted
+    _mark_offer_accepted(letter)  # must not raise
+
+    set_calls = patch_frappe.db.set_value.call_args_list
+    assert any(
+        c.args[:4] == ("Job Applicant", "JA-0008", "status", "Accepted")
+        for c in set_calls
+    )
+    patch_frappe.get_all.side_effect = None

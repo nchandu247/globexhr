@@ -23,6 +23,7 @@ values, recipient emails, or rendered content.
 """
 import json
 import os
+import re
 
 import frappe
 
@@ -81,8 +82,9 @@ def build_context(hr_letter, letter_type_doc=None) -> dict:
       1. company_* + default signatory from HR Letters Settings
       2. recipient doc fields (formatted by fieldtype)
       3. computed conveniences (tenure, last_working_day, ...)
-      4. compensation table + totals
-      5. HR-supplied filled_values (highest precedence)
+      4. Job Offer terms (candidate letters — decision A1, 2026-07-13)
+      5. compensation table + totals
+      6. HR-supplied filled_values (highest precedence)
     """
     letter_type = letter_type_doc or frappe.get_doc("Letter Type", hr_letter.letter_type)
     settings = frappe.get_single("HR Letters Settings")
@@ -93,6 +95,10 @@ def build_context(hr_letter, letter_type_doc=None) -> dict:
 
     recipient_doc = frappe.get_doc(hr_letter.recipient_type, hr_letter.recipient)
     context.update(_recipient_context(hr_letter.recipient_type, recipient_doc))
+
+    # Offered terms beat raw applicant fields (e.g. offered designation vs
+    # the Job Opening's), but compensation and filled_values still win.
+    context.update(_job_offer_context(hr_letter.recipient_type, hr_letter.recipient))
 
     if letter_type.uses_compensation_table:
         context.update(_compensation_context(hr_letter))
@@ -194,6 +200,76 @@ def _recipient_context(recipient_type: str, doc) -> dict:
         context["candidate_name"] = display_name
         context["recipient_name"] = display_name
         context["candidate_email"] = doc.get("email_id") or ""
+
+    return context
+
+
+def _scrub_placeholder(label: str) -> str:
+    """'Date of Joining' → 'date_of_joining' (local, offline-safe scrub)."""
+    return re.sub(r"[^a-z0-9]+", "_", label.strip().lower()).strip("_")
+
+
+def _format_term_value(term_label: str, value) -> str:
+    """
+    Job Offer Term values are free-typed Data strings. Keep letters
+    consistently formatted: ISO dates render as '01 August 2026', and pure
+    numbers on amount-ish terms get Indian commas. Anything else passes
+    through as typed.
+    """
+    text = str(value).strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+        return fmt_date(text)
+    if re.match(r"^\d+(\.\d+)?$", text) and re.search(
+        r"ctc|salary|amount|stipend|fee|pay", term_label, re.IGNORECASE
+    ):
+        return fmt_inr(text)
+    return text
+
+
+def _job_offer_context(recipient_type: str, recipient_name: str) -> dict:
+    """
+    Offer terms typed once on the candidate's Job Offer (decision A1,
+    2026-07-13) resolve as placeholders for every candidate letter, so HR
+    doesn't re-type the same facts into the Offer Letter and again into
+    the Appointment Letter.
+
+    Uses the latest non-rejected Job Offer linked to the Job Applicant:
+      - doc fields: designation (offered role), offer_date, company
+      - Job Offer Term rows: label scrubbed to a placeholder name
+        ('Date of Joining' → date_of_joining), value formatted by
+        _format_term_value.
+    """
+    if recipient_type != "Job Applicant":
+        return {}
+    offers = frappe.get_all(
+        "Job Offer",
+        filters={
+            "job_applicant": recipient_name,
+            "status": ["!=", "Rejected"],
+            "docstatus": ["<", 2],
+        },
+        fields=["name"],
+        order_by="modified desc",
+        limit=1,
+    )
+    if not offers:
+        return {}
+
+    offer = frappe.get_doc("Job Offer", offers[0]["name"])
+    context = {}
+    if offer.get("designation"):
+        context["designation"] = str(offer.get("designation"))
+    if offer.get("offer_date"):
+        context["offer_date"] = fmt_date(offer.get("offer_date"))
+    if offer.get("company"):
+        context["company"] = str(offer.get("company"))
+
+    for row in (offer.get("offer_terms") or []):
+        label = (getattr(row, "offer_term", None) or "").strip()
+        value = getattr(row, "value", None)
+        if not label or value in (None, ""):
+            continue
+        context[_scrub_placeholder(label)] = _format_term_value(label, value)
 
     return context
 
