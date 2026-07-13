@@ -1,3 +1,6 @@
 # Patches run in order on bench migrate
 # Format: app.module.patch_name
 globex_hr_letters.patches.v1_0.force_fixture_sync
+# Re-run per deploy batch that changes doctype schemas/fixtures — Frappe
+# treats the same patch with a distinct #comment as a new pending patch.
+globex_hr_letters.patches.v1_0.force_fixture_sync #2026-07-13 no_copy amend fix
