@@ -8,6 +8,14 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Signature block fits its page; footer line 2 centered
+
+- ✅ .signature-block switched flex → table layout: WeasyPrint over-avoids
+  breaks around flex containers and pushed the block to a fresh page even
+  when it fit; table cells fragment predictably. Top margin 12mm → 8mm.
+- ✅ Footer contacts line (Tel | email | web) centered under the
+  company/address line.
+
 ### 2026-07-13 — Salutation + always-on deductions section
 
 - ✅ Dropped the `title` placeholder from offer/consultant/intern salutations

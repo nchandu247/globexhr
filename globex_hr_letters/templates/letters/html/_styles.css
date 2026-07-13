@@ -106,6 +106,9 @@ strong { font-weight: 600; }
   display: block;
   white-space: nowrap;
 }
+.footer .footer-line + .footer-line {
+  text-align: center;   /* second line (contacts) centered under the first */
+}
 
 /* ── Watermark (fixed image on every page, dimmed via opacity) ── */
 .watermark {
@@ -250,14 +253,24 @@ ol.clauses li {
 }
 
 /* ── Signature blocks ──────────────────────────────────────── */
+/* Table layout, not flex: WeasyPrint over-avoids page breaks around flex
+   containers and pushes the whole block to the next page even when it fits. */
 .signature-block {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 12mm;
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  margin-top: 8mm;
   page-break-inside: avoid;
 }
 .signature-block .signer {
-  width: 48%;
+  display: table-cell;
+  width: 50%;
+  vertical-align: top;
+  padding-right: 8mm;
+}
+.signature-block .signer:last-child {
+  padding-right: 0;
+  padding-left: 8mm;
 }
 .signature-block .signer .signer-name {
   font-weight: 600;
