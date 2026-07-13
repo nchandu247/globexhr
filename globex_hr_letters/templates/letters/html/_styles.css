@@ -19,7 +19,9 @@
     content: element(letterhead-logo);
     vertical-align: middle;
   }
-  @bottom-center {
+  @bottom-left {
+    /* left margin box starts at the page's left margin — footer lines up
+       with the logo/content edge instead of floating centered */
     content: element(footer);
     vertical-align: bottom;
   }
@@ -98,13 +100,11 @@ strong { font-weight: 600; }
 .footer .company-name {
   font-weight: 600;
   color: #01248A;
-  display: block;
-  margin-bottom: 0.3mm;
-  font-size: 9pt;
+  font-size: 8.5pt;
 }
-.footer .footer-address,
-.footer .footer-contact {
+.footer .footer-line {
   display: block;
+  white-space: nowrap;
 }
 
 /* ── Watermark (fixed image on every page, dimmed via opacity) ── */

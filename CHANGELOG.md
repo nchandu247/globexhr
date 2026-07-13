@@ -8,6 +8,12 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Footer: two lines, aligned to the content margin
+
+Moved the running footer from the @bottom-center page box (which floats
+centered, never reaching the left margin) to @bottom-left, and collapsed
+it to two lines: company | full address, then Tel | email | web.
+
 ### 2026-07-13 — Fix: Generate overlay never cleared
 
 `run_generate` chained `.finally` onto `frm.call`'s jQuery-style promise,
