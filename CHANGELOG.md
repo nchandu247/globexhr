@@ -8,6 +8,16 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Salutation + always-on deductions section
+
+- ✅ Dropped the `title` placeholder from offer/consultant/intern salutations
+  — HR read "Title" as job title, producing "Dear Accounts Manager <name>".
+  Salutation is now "Dear <name>,".
+- ✅ Annexure shows the Employee Deductions section always, matching the
+  approved sample: real Deduction-type rows when entered, otherwise the
+  standard three (PF, ESI/Medical, Professional Tax) with dashes; Monthly
+  Net (A - B) always printed.
+
 ### 2026-07-13 — Footer: two lines, aligned to the content margin
 
 Moved the running footer from the @bottom-center page box (which floats
