@@ -43,6 +43,7 @@ class FakeRecipient:
 def _employee(**overrides):
     values = {
         "employee_name": "nalluri sudha",
+        "employee_number": "GDS0021",
         "designation": "SOFTWARE ENGINEER",
         "date_of_joining": "2024-01-15",
         "company_email": "sudha@globexdigital.ai",
@@ -267,4 +268,50 @@ def test_generate_hard_errors_on_unresolved_placeholders(patch_frappe, settings)
 
     thrown = str(patch_frappe.throw.call_args)
     assert "work_location" in thrown
+    patch_frappe.throw.side_effect = None
+
+
+# ── greytHR Employee ID (decisions B3/B5, 2026-07-13) ─────────────────────────
+
+def test_employee_context_exposes_greythr_id():
+    """Letters print the greytHR ID (employee_number), not the internal
+    Frappe docname — employee_id and greythr_employee_id both carry it."""
+    ctx = engine._recipient_context("Employee", _employee())
+    assert ctx["employee_id"] == "GDS0021"
+    assert ctx["greythr_employee_id"] == "GDS0021"
+
+
+def test_employee_context_falls_back_to_docname_without_greythr_id():
+    """Defensive fallback for non-letter callers — generate() itself is
+    guarded and never reaches this state."""
+    ctx = engine._recipient_context("Employee", _employee(employee_number=""))
+    assert ctx["employee_id"] == "GDS0021"  # doc.name fallback
+    assert ctx["greythr_employee_id"] == ""
+
+
+def test_generate_blocks_employee_letter_without_greythr_id(patch_frappe, settings):
+    """B5: employee letters refuse to generate until the greytHR ID is
+    recorded — otherwise the letter would print the internal name."""
+    letter_type = _letter_type()
+    _wire_get_doc(patch_frappe, letter_type, _employee(employee_number=""))
+    patch_frappe.throw.side_effect = RuntimeError("frappe.throw")
+
+    with pytest.raises(RuntimeError):
+        engine.generate(_hr_letter())
+
+    thrown = str(patch_frappe.throw.call_args)
+    assert "greytHR" in thrown
+    patch_frappe.throw.side_effect = None
+
+
+def test_generate_blocks_employee_letter_with_malformed_greythr_id(patch_frappe, settings):
+    letter_type = _letter_type()
+    _wire_get_doc(patch_frappe, letter_type, _employee(employee_number="GSD0033"))
+    patch_frappe.throw.side_effect = RuntimeError("frappe.throw")
+
+    with pytest.raises(RuntimeError):
+        engine.generate(_hr_letter())
+
+    thrown = str(patch_frappe.throw.call_args)
+    assert "greytHR" in thrown
     patch_frappe.throw.side_effect = None

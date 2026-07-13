@@ -32,19 +32,14 @@ scheduler_events = {
     }
 }
 
-# UX filter — hide Employees with malformed employee_number values from
-# autocompletes and list views (NOT a security boundary; direct URL access
-# still works). See globex_hr_letters/utils/permissions.py for the rationale.
-permission_query_conditions = {
-    "Employee": "globex_hr_letters.utils.permissions.employee_query_conditions",
-}
-
-
 # Document event handlers
 doc_events = {
-    # Employee naming: use employee_number as the Frappe primary key when
-    # present. Falls back to default naming series (HR-EMP-####) when empty.
+    # greytHR Employee ID (employee_number): malformed values are a hard
+    # save error (GDS + 3-6 digits); records keep the internal HR-EMP-####
+    # name — decisions B3/B4, 2026-07-13. before_insert only defaults the
+    # mandatory holiday_list.
     "Employee": {
-        "before_insert": "globex_hr_letters.hooks_handlers.employee.set_name_from_employee_number",
+        "before_insert": "globex_hr_letters.hooks_handlers.employee.apply_employee_defaults",
+        "validate": "globex_hr_letters.hooks_handlers.employee.validate_employee_number",
     },
 }

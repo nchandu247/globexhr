@@ -99,12 +99,27 @@ under `docs/superpowers/specs/2026-05-*` are historical context only.
    delivery idempotency + resend button, E12 CC, tests for
    dispatch/webhook/delivery paths, retention job (F16).
 
-## 4b. Still open (blocking their phases only)
+## 4b. Answered 2026-07-13 (round 2)
 
-- **USA letter pack scope** — which types (offer? employment verification?),
-  which legal entity/letterhead, at-will language, USD/date formats.
-- **Legal entity list** — names + letterheads for F14.
-- **Retention duration** — F16.
+- **USA letter pack** — USA Offer Letter + Employment Verification Letter,
+  issued by **Globex Digital Corp**, USD amounts, US date format.
+- **Legal entities (F14)** — a) Globex Digital Solutions Pvt. Ltd.,
+  b) Globex Digital Corp, c) TalentXP Private Limited,
+  d) Real Foods Private Limited, e) CarbonX Agri Private Limited.
+- **Retention (F16)** — rejected/never-joined candidates purged after
+  12 months; employee letters kept employment + 3 years.
+- **Zoho console webhook** — re-registered to the
+  `globex_hr_letters` callback URL (2026-07-13). ✓
+
+## 4c. Still open (blocking their phases only)
+
+- **Per-entity letterhead assets** — registered address, phone, email,
+  logo, and signatory for each of the 5 entities (needed for phase 4).
+- **Entity mapping** — confirm letters pick the entity from
+  `Employee.company` / Job Opening company, and that Company records for
+  all 5 exist in Frappe HR.
+- **US letter wording** — at-will clause and Employment Verification
+  content need HR/legal sign-off before templates ship (phase 6).
 
 ## 5. Conventions
 

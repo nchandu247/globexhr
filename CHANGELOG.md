@@ -8,6 +8,35 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Phase 1: greytHR Employee ID handling (B3/B4/B5) + amend fix
+
+- ✅ **Employee ID validation** (`hooks_handlers/employee.py`): new
+  `validate_employee_number` on Employee `validate` — malformed greytHR IDs
+  (format GDS + 3–6 digits, widened from 3–5) are now a **hard save error**
+  with an actionable message; accepted values normalise to uppercase. Empty
+  stays allowed (ID arrives after joining).
+- ✅ **Retired the silent list filter** (`utils/permissions.py` deleted,
+  `permission_query_conditions` unwired) — malformed records stay visible so
+  HR can fix them instead of vanishing from pickers.
+- ✅ **Retired the insert-time rename hook** (B3): Employees keep the
+  internal HR-EMP-#### identity; `before_insert` now only defaults the
+  holiday list (`apply_employee_defaults`).
+- ✅ **Letters print the greytHR ID**: engine `employee_id` placeholder now
+  resolves to `employee_number` (doc.name fallback for non-letter callers);
+  new `greythr_employee_id` alias.
+- ✅ **Generation guard** (B5): `engine.generate()` refuses Employee-recipient
+  letters until a valid greytHR ID is on the Employee
+  (`_require_greythr_id`).
+- ✅ **Amend fix**: `status`, `zoho_request_id`, `generated_pdf`, `issued_on`,
+  `issued_by` now `no_copy` in hr_letter.json — amended drafts start clean
+  (Draft, no stale Zoho request id blocking re-dispatch). `filled_values`
+  deliberately stays copyable.
+- ✅ Tests: `test_permissions.py` rewritten for the validator; new
+  `test_hr_letter_doctype.py` (no_copy guards); engine greytHR ID +
+  generation-guard tests. Suite: **83 passing** (was 77).
+- 📋 PLAN.md: round-2 answers recorded (USA pack scope, 5 legal entities,
+  retention 12mo/+3yr, Zoho webhook re-registered ✓).
+
 ### 2026-07-13 — Product decisions locked; blocker fixes (Zoho tags, CI deps)
 
 Full 8-agent codebase gap analysis run; owner answered all 17 product

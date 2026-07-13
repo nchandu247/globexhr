@@ -38,6 +38,7 @@ from .merger import (
     tenure_str,
     today_str,
 )
+from ..hooks_handlers.employee import GREYTHR_ID_RE
 from ..utils.logging import log_error
 
 # Placeholders every render receives without HR needing to supply them.
@@ -169,7 +170,13 @@ def _recipient_context(recipient_type: str, doc) -> dict:
     # Curated conveniences on top of raw fields
     if recipient_type == "Employee":
         display_name = format_person_name(doc.get("employee_name") or doc.get("first_name"))
-        context["employee_id"] = doc.name
+        # Letters print the greytHR Employee ID (employee_number), not the
+        # internal Frappe name — decision B3, 2026-07-13. generate() guards
+        # that the ID exists for Employee letters, so the doc.name fallback
+        # only covers non-letter callers.
+        greythr_id = doc.get("employee_number") or ""
+        context["employee_id"] = greythr_id or doc.name
+        context["greythr_employee_id"] = greythr_id
         context["employee_name"] = display_name
         context["recipient_name"] = display_name
         context["designation"] = format_person_name(doc.get("designation") or "")
@@ -229,6 +236,25 @@ def _compensation_context(hr_letter) -> dict:
 
 # ── generation ────────────────────────────────────────────────────────────────
 
+def _require_greythr_id(employee_docname: str) -> None:
+    """
+    Employee letters must not go out without the greytHR Employee ID
+    (decision B5, 2026-07-13): the ID is recorded manually after joining,
+    and letters print it — generating earlier would emit the internal
+    Frappe name instead.
+    """
+    employee = frappe.get_doc("Employee", employee_docname)
+    emp_no = (employee.get("employee_number") or "").strip()
+    if not GREYTHR_ID_RE.match(emp_no):
+        frappe.throw(
+            f"Employee {employee_docname} has no valid greytHR Employee ID. "
+            "Record the Employee Number (GDS + 3-6 digits, generated in "
+            "greytHR) on the Employee record before generating employee "
+            "letters.",
+            title="greytHR Employee ID Required",
+        )
+
+
 def generate(hr_letter) -> None:
     """
     Render the letter and attach the PDF. Runs synchronously (WeasyPrint
@@ -244,6 +270,8 @@ def generate(hr_letter) -> None:
         frappe.throw("HR Letters is disabled in HR Letters Settings.")
     if not letter_type.is_active:
         frappe.throw(f"Letter Type '{letter_type.name}' is inactive.")
+    if hr_letter.recipient_type == "Employee":
+        _require_greythr_id(hr_letter.recipient)
 
     context = build_context(hr_letter, letter_type)
     missing = sorted(get_template_placeholders(letter_type) - set(context.keys()))
