@@ -48,30 +48,63 @@ under `docs/superpowers/specs/2026-05-*` are historical context only.
 - 71 offline tests green (engine, Zoho client, webhook, workspace guards,
   permissions, placeholders setup).
 
-## 3. Next steps (in order)
+## 3. Product decisions — locked 2026-07-13 (owner: nchandu)
 
-1. **Install on the test site** — uninstall `greythr_bridge`, install
-   `globex_hr_letters`, migrate; verify fixtures loaded (14 Letter Types),
-   workspace renders, health_check passes.
-2. **End-to-end smoke on site** — generate one plain letter (Service
-   Certificate) and one signature letter (Offer with compensation rows)
-   against a test Employee/Job Applicant; verify PDF quality, prompts,
-   attachments, Zoho round-trip.
-3. **Letterhead from Settings** — templates currently hardcode the Globex
-   letterhead in `_base.html`; optionally switch to `company_*` placeholders
-   once real values are in Settings.
-4. **Template polish round** — HR reviews all 14 rendered PDFs; wording and
-   layout tweaks.
-5. **Production readiness** — Zoho production credentials, webhook registered,
-   HR role permissions reviewed, go-live.
+| # | Decision |
+|---|---|
+| A1 | Offer terms (designation, joining date, CTC, location, notice/probation) live in Frappe HR's **Job Offer** doctype — typed once per candidate, reused by Offer + Appointment letters. |
+| A2 | Signed offer → Job Applicant auto-marked **Accepted**; Employee onboarded **manually on joining day** (no auto-conversion). |
+| B3 | Employee records keep the **internal Frappe ID** (no renaming). greytHR ID lives in `employee_number` and letters print it via a dedicated placeholder. Insert-time rename hook to be retired. |
+| B4 | greytHR ID format: **GDS + 3–6 digits**. Invalid ID → **validation error at save** (replaces today's silent list-hiding). |
+| B5 | Employee letters (Confirmation, Experience, Relieving…) **refuse to generate until greytHR ID is filled**. |
+| C6 | Candidate letters linked to the later Employee record **matched by email**. |
+| D7 | Promotion, Salary Revision, Relieving **stay e-signed** — Zoho tags added to all three templates (2026-07-13). |
+| D8 | Declined/Expired become real HR Letter **statuses** + **email alert** to HR (not just popup). |
+| D9 | Cancelling a sent letter **recalls the Zoho request**. |
+| E10 | Letterhead / company identity **editable from Settings** — no developer, no deploy. |
+| E11 | Outgoing mail: **hr@globexdigital.ai** Email Account, SPF/DKIM configured (verify on site). |
+| E12 | Every issued/signed letter **CCs the HR mailbox**. |
+| F13 | Employees will NOT log into this app (greytHR handles employee self-service). Letters remain HR-facing. |
+| F14 | **Multiple legal entities** — per-company letterhead required. |
+| F15 | Ref numbering: Indian fiscal-year style **GDS/HR/2026-27/001**. |
+| F16 | DPDP retention policy required — **duration TBD** (owner to confirm). |
+| F17 | Catalog additions: **Bonafide/NOC, Probation Extension, Full & Final Settlement** — plus a **USA letter pack** (scope TBD). |
 
-## 4. Deferred (explicitly out of scope for v1)
+## 4. Roadmap (phases; each gets its own plan doc before build)
 
-- Auto-trigger hooks (e.g. Offer Letter on Job Offer submit) — thin
-  `doc_events` handlers creating HR Letters via the same engine.
-- Bulk letter generation (multiple employees at once).
-- Direct email delivery preferences / templates per letter type.
-- Any external HR/payroll system integration.
+0. **Unblock deploy/go-live** — CI deps + Zoho tags in 3 templates (✅
+   2026-07-13); re-register Zoho console webhook to
+   `globex_hr_letters.webhooks.zoho_sign.callback`; verify Email Account;
+   E2E smoke (one plain + one signature letter) on gdshr.
+1. **greytHR ID handling** — B3/B4/B5: retire rename hook, validate format
+   (GDS\d{3,6}) at save with error, drop the silent list filter,
+   `greythr_employee_id` placeholder, generation guard on employee letters.
+   Fix amend `no_copy` (stale status/zoho_request_id) while in the doctype.
+2. **Job Offer integration** — A1/A2: engine reads offer terms from the
+   candidate's Job Offer; signed-offer webhook sets applicant Accepted +
+   ToDo for HR.
+3. **Zoho unhappy paths** — D8/D9: Declined/Expired statuses, recall on
+   cancel, email notifications, replay-window fail-closed, persist
+   request_id before submit.
+4. **Company identity from Settings + multi-entity** — E10/F14: templates
+   read `company_*`/logo/signature from Settings; Company link on HR Letter;
+   per-company letterhead records.
+5. **Fiscal-year ref numbering** — F15: custom autoname
+   GDS/HR/{fy}/{####}; decide amend-suffix handling.
+6. **Catalog expansion** — F17: Bonafide/NOC, Probation Extension, F&F
+   Settlement templates + fixtures; USA letter pack once scoped.
+7. **Candidate→Employee continuity** — C6: email-match linkage; Employee
+   "View Letters" includes candidate-era letters.
+8. **Hardening** — silent-blank guards (empty Settings/comp table),
+   delivery idempotency + resend button, E12 CC, tests for
+   dispatch/webhook/delivery paths, retention job (F16).
+
+## 4b. Still open (blocking their phases only)
+
+- **USA letter pack scope** — which types (offer? employment verification?),
+  which legal entity/letterhead, at-will language, USD/date formats.
+- **Legal entity list** — names + letterheads for F14.
+- **Retention duration** — F16.
 
 ## 5. Conventions
 

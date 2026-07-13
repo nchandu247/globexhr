@@ -1,4 +1,9 @@
 # Dev / test dependencies only.
 # Runtime deps live in pyproject.toml — Frappe Cloud installs from there.
+# docxtpl + jinja2 appear here too: merger.py imports docxtpl at module
+# level and the placeholder-scan tests exercise jinja2, so the offline CI
+# suite needs both installed from this file.
 responses
 pytest
+docxtpl
+jinja2

@@ -39,11 +39,24 @@
   </p>
 </div>
 
-<div class="hr-sig-block">
-  <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
-  <img class="hr-sig-image" src="img/hr_signature.png" alt="">
-  <div class="hr-sig-line">
-    <span class="hr-sig-label">{{ signatory_name }}<br>Authorised Signatory</span>
+<div class="signature-block">
+  <div class="signer">
+    <p class="signer-name">For Globex Digital Solutions Pvt Ltd</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R1*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">{{ signatory_name }}<br>Authorised Signatory</span>
+    </div>
+  </div>
+  <div class="signer">
+    <p class="signer-name">{{ employee_name }}</p>
+    <div class="sig-area">
+      <span class="zoho-sig-tag">{% raw %}{{S:R2*}}{% endraw %}</span>
+    </div>
+    <div class="signer-line">
+      <span class="signer-label">Received &amp; Acknowledged</span>
+    </div>
   </div>
 </div>
 

@@ -8,6 +8,23 @@ Format: `## [Unreleased]` until first production deploy, then version + date.
 
 ## [Unreleased]
 
+### 2026-07-13 — Product decisions locked; blocker fixes (Zoho tags, CI deps)
+
+Full 8-agent codebase gap analysis run; owner answered all 17 product
+questions. Decisions + phased roadmap recorded in `PLAN.md` §3/§4.
+
+- ✅ Promotion, Salary Revision, Relieving templates: static `hr_signature.png`
+  block replaced with the two-signer Zoho tag block (`{{S:R1*}}`/`{{S:R2*}}`,
+  same structure as Termination). These three were flagged
+  `requires_signature=1` but had no signature fields — Zoho envelopes would
+  have arrived unsignable. (Decision D7: they stay e-signed.)
+- ✅ `requirements.txt`: added `docxtpl` + `jinja2` — CI installed only
+  responses/pytest, so test collection failed in a clean environment
+  (merger.py imports docxtpl at module level).
+- 📋 Known remaining blockers (site-side): Zoho console webhook still points
+  at the old `greythr_bridge` callback path; Email Account on site to verify;
+  E2E smoke never run. See PLAN.md roadmap phase 0.
+
 ### 2026-07-11 — Force-migrate patch so deploy syncs fixtures (no SSH)
 
 Fixtures (Letter Types, Client Scripts) weren't loading on the test site
